@@ -1,0 +1,63 @@
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: timescaledb
+  namespace: assetvar
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      k8s-app: timescaledb
+  template:
+    metadata:
+      labels:
+        task: monitoring
+        k8s-app: timescaledb
+    spec:
+
+      containers:
+      - name: timescaledb
+        resources:
+
+        image: timescale/timescaledb:2.1.1-pg13
+        ports:
+        - containerPort: 5432
+        # volumeMounts:
+        # - mountPath: /var/lib/timescaledb
+        #   name: timescaledb
+        env:
+        - name: POSTGRES_PASSWORD
+          value: "password"
+      volumes:
+      - name: timescaledb
+        persistentVolumeClaim:
+          claimName: timescaledb-claim
+# ---
+# apiVersion: v1
+# kind: Service
+# metadata:
+#   name: timescaledb
+#   namespace: assetvar
+# spec:
+#   ports:
+#   - port: 5432
+#     targetPort: 5432
+#   selector:
+#     k8s-app: timescaledb
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: timescaledb
+  namespace: assetvar
+spec:
+  ports:
+  - name: http
+    port: 5432
+    targetPort: 5432
+  selector:
+    k8s-app: timescaledb
+  type: LoadBalancer
+  loadBalancerIP: 192.168.6.69

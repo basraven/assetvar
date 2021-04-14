@@ -1,0 +1,2 @@
+INSERT INTO coins_history_value(starttime, endtime, pair_name, interval, first_trade_id, last_trade_id, open, close, high, low, base_asset_volume, quote_asset_volume, number_of_trades, is_kline_close)
+  VALUES (NOW(), NOW(), 'BNBBTC', '1m', '100', '200', 0.001, 0.002, 0.0025, 0.0015, 1000, 10000, 100, false);

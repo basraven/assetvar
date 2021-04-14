@@ -1,0 +1,97 @@
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: metabase
+  namespace: assetvar
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      k8s-app: metabase
+  template:
+    metadata:
+      labels:
+        task: monitoring
+        k8s-app: metabase
+    spec:
+
+      containers:
+      - name: metabase
+        resources:
+        image: metabase/metabase
+        ports:
+        - containerPort: 3000
+        volumeMounts:
+        - mountPath: "/metabase-data"
+          name: metabase
+        env:
+        - name: MB_DB_FILE
+          value: "/metabase-data/metabase.db"
+      volumes:
+      - name: metabase
+        persistentVolumeClaim:
+          claimName: metabase-claim
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: metabase
+  namespace: assetvar
+spec:
+  ports:
+  - port: 80
+    targetPort: 3000
+  selector:
+    k8s-app: metabase
+
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: metabase-bas
+  namespace: assetvar
+spec:
+  issuerRef:
+    name: la1r
+    kind: ClusterIssuer
+  secretName: metabase-bas-tls
+  commonName: metabase.bas
+  dnsNames:
+  - metabase.bas
+  - www.metabase.bas
+---
+apiVersion: traefik.containo.us/v1alpha1
+kind: IngressRoute
+metadata:
+  name: metabase-non-tls
+  namespace: assetvar
+spec:
+  entryPoints:
+    - web
+  routes:
+  - match: Host(`metabase.bas`) && PathPrefix(`/`)
+    kind: Rule
+    services:
+    - name: metabase
+      port: 80
+    middlewares:
+    - name: http-redirect-to-https
+      namespace: traefik
+---
+apiVersion: traefik.containo.us/v1alpha1
+kind: IngressRoute
+metadata:
+  name: metabase-tls
+  namespace: assetvar
+spec:
+  entryPoints:
+    - websecure
+  routes:
+  - match: Host(`metabase.bas`) && PathPrefix(`/`)
+    kind: Rule
+    services:
+    - name: metabase
+      port: 80
+  tls:
+    secretName: metabase-bas-tls

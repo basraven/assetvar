@@ -1,0 +1,13 @@
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: metabase-claim
+  namespace: assetvar
+spec:
+  storageClassName: nfs-112
+  accessModes:
+    - ReadWriteMany
+  resources:
+    requests:
+      storage: 10Gi
