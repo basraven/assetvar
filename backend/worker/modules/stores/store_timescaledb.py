@@ -13,9 +13,9 @@ class Store:
     return self.connection
 
     
-  def save_candle(self, candle_value):
+  def save_candle(self, candle_value, commit=True):
     # try:
-    self.cur.execute("INSERT INTO coins_history_value(starttime, endtime, pair_name, interval, first_trade_id, last_trade_id, open, close, high, low, base_asset_volume, quote_asset_volume, number_of_trades, is_kline_close) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s );",
+    self.cur.execute("INSERT INTO assetvar_data.coins_history_value(starttime, endtime, pair_name, interval, first_trade_id, last_trade_id, open, close, high, low, base_asset_volume, quote_asset_volume, number_of_trades, is_kline_close) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s );",
         (
           candle_value["starttime"],
           candle_value["endtime"],
@@ -33,6 +33,33 @@ class Store:
           candle_value["is_kline_close"]
         )
     )
-    self.connection.commit()
+    if commit:
+      self.connection.commit()
     # except (Exception, psycopg2.Error) as error:
     #   print(error.pgerror)
+ 
+  def save_analysis(self, analyzed_candle, commit=True):
+    for analysis_key, analyzed_value in analyzed_candle['analysis'].items():
+      
+      # try:
+      query_header = "INSERT INTO assetvar_data.technical_%s(starttime, endtime, pair_name, interval, %s_period, %s)" % (
+        analysis_key,
+        analysis_key,
+        analysis_key
+      )
+      self.cur.execute( query_header + "VALUES (%s, %s, %s, %s, %s, %s);",
+          (
+            analyzed_candle["starttime"],
+            analyzed_candle["endtime"],
+            analyzed_candle["pair_name"],
+            analyzed_candle["interval"],
+            analyzed_value['period'],
+            analyzed_value['value']
+          )
+      )
+      if commit:
+        self.connection.commit()
+      # except (Exception, psycopg2.Error) as error:
+      #   print(error.pgerror)
+
+  
