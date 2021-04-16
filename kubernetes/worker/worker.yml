@@ -1,0 +1,53 @@
+---
+# source: https://github.com/mateobur/prometheus-monitoring-guide/tree/master/alertmanager-example
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: worker-config
+  namespace: assetvar
+data:
+  run.sh: |-
+    apk add git
+    git clone https://github.com/basraven/assetvar.git
+    cd assetvar/backend/worker
+    pip3 install -r requirements.txts
+    sleep 10000000
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: worker
+  namespace: assetvar
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      k8s-app: worker
+  template:
+    metadata:
+      labels:
+        k8s-app: worker
+    spec:
+
+      containers:
+      - name: worker
+        resources:
+        image: python:alpine
+        env:
+        - name: TARGET_ASSETS
+          value: "USDT"
+        - name: INTERVAL
+          value: "1m"
+        volumeMounts:
+        - name: worker-config-run
+          mountPath: /tmp/run.sh
+          subPath: run.sh
+      volumes:
+      - name: worker-config-run
+        configMap:
+          name: worker-config-run
+          items:
+          - key: run.sh
+            path: run.sh
+          defaultMode: 0744

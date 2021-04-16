@@ -47,13 +47,13 @@ class Exchange:
         "interval": raw_message['k']['i'],
         "first_trade_id": raw_message['k']['f'],
         "last_trade_id": raw_message['k']['L'],
-        "open": raw_message['k']['o'],
-        "close": raw_message['k']['c'],
-        "high": raw_message['k']['h'],
-        "low": raw_message['k']['l'],
-        "base_asset_volume": raw_message['k']['v'], # Klopt niet
-        "quote_asset_volume": raw_message['k']['q'],
-        "number_of_trades": raw_message['k']['n'],
+        "open": float(raw_message['k']['o']),
+        "close": float(raw_message['k']['c']),
+        "high": float(raw_message['k']['h']),
+        "low": float(raw_message['k']['l']),
+        "base_asset_volume": float(raw_message['k']['v']), # Klopt niet
+        "quote_asset_volume": float(raw_message['k']['q']),
+        "number_of_trades": int(raw_message['k']['n']),
         "is_kline_close": raw_message['k']['x']
         }
 

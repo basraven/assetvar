@@ -16,10 +16,10 @@ from modules.exchanges import exchange_binance as exchange
 from modules.stores import store_timescaledb as store
 from modules.techanalysis import techanalysis_all
 
-TARGET_ASSETS = "USDT" # Comma separated "USDT,BTC"
-INTERVAL = "1m"
-REPORT_COUNT = 100
-HISTORY_COUNT = 100
+TARGET_ASSETS = os.environ.get("TARGET_ASSETS") or "USDT" # Comma separated "USDT,BTC"
+INTERVAL = os.environ.get('INTERVAL') or "1m"
+REPORT_COUNT = int(os.environ.get('REPORT_COUNT')) if os.environ.get('REPORT_COUNT') else 100
+HISTORY_COUNT = int(os.environ.get('HISTORY_COUNT')) if os.environ.get('HISTORY_COUNT') else 100
 
 
 def _create_logger():
@@ -39,14 +39,14 @@ class Get_socket_binance:
         self.store.connect()
         self.processed_transactions = 0
         self.techanalyzer = techanalysis_all.Techanalyzer()
-        self.history_df =  pd.DataFrame()
-
+        
     def add_to_history(self, candle_value):
-        if self.history_df.size == 0:
-            self.history_df = pd.DataFrame([candle_value])
-        if len(self.history_df) > HISTORY_COUNT:
-            self.history_df = self.history_df[:-1] # Remove last row -1
-        self.history_df.append(candle_value,ignore_index=True)
+        if not hasattr(self, 'history'):
+            self.history = pd.DataFrame([candle_value])
+            return
+        while len(self.history.index) > (HISTORY_COUNT * self.batch_size):
+            self.history = self.history[:-1] # Remove last row -1
+        self.history = self.history.append(pd.DataFrame([candle_value]))
 
 
     async def wait_forever(self, websocket):
@@ -65,7 +65,7 @@ class Get_socket_binance:
                     batch_counter += 1
                     self.add_to_history(candle_value)
                     # self.logger.info(candle_value)
-                    analyzed_candle = self.techanalyzer.analyze(candle_value, self.history_df)
+                    analyzed_candle = self.techanalyzer.analyze(candle_value, self.history)
                     if batch_counter == self.batch_size:  # Reset counter
                         self.store.save_candle(candle_value, True)
                         self.store.save_analysis(analyzed_candle, True)
