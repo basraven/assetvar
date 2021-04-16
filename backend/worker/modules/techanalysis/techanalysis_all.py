@@ -1,3 +1,4 @@
+from modules.techanalysis import techanalysis_rsi
 
 class Techanalyzer:
 
@@ -5,11 +6,8 @@ class Techanalyzer:
     self.connection = None
     self.cur = None
 
-  def analyze(self, candle_value):
-    candle_value['analysis'] = {
-      'rsi': {
-        'period' : 16,
-        'value' : 30
-      }
-    }
+  def analyze(self, candle_value, history):
+    
+    techanalysis_rsi.calc_rsi(candle_value, history)
+    # print(candle_value)
     return candle_value

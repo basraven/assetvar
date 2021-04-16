@@ -5,6 +5,7 @@ import json
 import os
 import logging
 import time
+import pandas as pd
 
 # Sources used
 # https://gist.github.com/stefanotorresi/bfb9716f73f172ac4439436456a96d6f
@@ -18,6 +19,8 @@ from modules.techanalysis import techanalysis_all
 TARGET_ASSETS = "USDT" # Comma separated "USDT,BTC"
 INTERVAL = "1m"
 REPORT_COUNT = 100
+HISTORY_COUNT = 100
+
 
 def _create_logger():
     logging.basicConfig(level=logging.INFO)
@@ -36,6 +39,14 @@ class Get_socket_binance:
         self.store.connect()
         self.processed_transactions = 0
         self.techanalyzer = techanalysis_all.Techanalyzer()
+        self.history_df =  pd.DataFrame()
+
+    def add_to_history(self, candle_value):
+        if self.history_df.size == 0:
+            self.history_df = pd.DataFrame([candle_value])
+        if len(self.history_df) > HISTORY_COUNT:
+            self.history_df = self.history_df[:-1] # Remove last row -1
+        self.history_df.append(candle_value,ignore_index=True)
 
 
     async def wait_forever(self, websocket):
@@ -52,8 +63,9 @@ class Get_socket_binance:
                 candle_value = self.exchange.map_fields(raw_message)
                 if candle_value["is_kline_close"]:
                     batch_counter += 1
+                    self.add_to_history(candle_value)
                     # self.logger.info(candle_value)
-                    analyzed_candle = self.techanalyzer.analyze(candle_value)
+                    analyzed_candle = self.techanalyzer.analyze(candle_value, self.history_df)
                     if batch_counter == self.batch_size:  # Reset counter
                         self.store.save_candle(candle_value, True)
                         self.store.save_analysis(analyzed_candle, True)

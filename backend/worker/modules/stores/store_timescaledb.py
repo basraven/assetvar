@@ -39,6 +39,8 @@ class Store:
     #   print(error.pgerror)
  
   def save_analysis(self, analyzed_candle, commit=True):
+    if 'analysis' not in analyzed_candle:
+      return
     for analysis_key, analyzed_value in analyzed_candle['analysis'].items():
       
       # try:
