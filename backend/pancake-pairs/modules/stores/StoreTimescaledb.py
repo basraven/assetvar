@@ -105,9 +105,9 @@ class StoreTimescaledb:
   
   def storePairPriceList(self, PairPriceList):
     with self.connection:
-      insert_query = 'INSERT INTO assetvar_data.pair_price(currentTime, pairAddress, priceBnb, priceUsdt, targetToken, swappableToken) VALUES %s'
+      insert_query = 'INSERT INTO assetvar_data.pair_price(currentTime, pairAddress, priceBnb, priceUsdt, targetToken, stableToken) VALUES %s'
       extras.execute_values (
-          self.cur, insert_query, [(pairPrice.currentTime, pairPrice.pairAddress, pairPrice.priceBnb, pairPrice.priceUsdt, pairPrice.targetToken, pairPrice.swappableToken) for pairPrice in PairPriceList if pairPrice], template=None, page_size=100
+          self.cur, insert_query, [(pairPrice.currentTime, pairPrice.pairAddress, pairPrice.priceBnb, pairPrice.priceUsdt, pairPrice.targetToken, pairPrice.stableToken) for pairPrice in PairPriceList if pairPrice], template=None, page_size=100
       )
       
       self.connection.commit()

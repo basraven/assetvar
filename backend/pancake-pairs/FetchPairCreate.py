@@ -28,7 +28,6 @@ class FetchPairCreate:
 
     PANCAKESWAP_FACTORY_ADDRESS = "0xcA143Ce32Fe78f1f7019d7d551a6402fC5350c73"
     pancakeswapFactoryAbi = ""
-    BNB_ADDRESS = "0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c" # Hack
     STANDARD_ABI = '[{"constant":true,"inputs":[],"name":"name","outputs":[{"name":"","type":"string"}],"payable":false,"stateMutability":"view","type":"function"},{"constant":false,"inputs":[{"name":"guy","type":"address"},{"name":"wad","type":"uint256"}],"name":"approve","outputs":[{"name":"","type":"bool"}],"payable":false,"stateMutability":"nonpayable","type":"function"},{"constant":true,"inputs":[],"name":"totalSupply","outputs":[{"name":"","type":"uint256"}],"payable":false,"stateMutability":"view","type":"function"},{"constant":false,"inputs":[{"name":"src","type":"address"},{"name":"dst","type":"address"},{"name":"wad","type":"uint256"}],"name":"transferFrom","outputs":[{"name":"","type":"bool"}],"payable":false,"stateMutability":"nonpayable","type":"function"},{"constant":false,"inputs":[{"name":"wad","type":"uint256"}],"name":"withdraw","outputs":[],"payable":false,"stateMutability":"nonpayable","type":"function"},{"constant":true,"inputs":[],"name":"decimals","outputs":[{"name":"","type":"uint8"}],"payable":false,"stateMutability":"view","type":"function"},{"constant":true,"inputs":[{"name":"","type":"address"}],"name":"balanceOf","outputs":[{"name":"","type":"uint256"}],"payable":false,"stateMutability":"view","type":"function"},{"constant":true,"inputs":[],"name":"symbol","outputs":[{"name":"","type":"string"}],"payable":false,"stateMutability":"view","type":"function"},{"constant":false,"inputs":[{"name":"dst","type":"address"},{"name":"wad","type":"uint256"}],"name":"transfer","outputs":[{"name":"","type":"bool"}],"payable":false,"stateMutability":"nonpayable","type":"function"},{"constant":false,"inputs":[],"name":"deposit","outputs":[],"payable":true,"stateMutability":"payable","type":"function"},{"constant":true,"inputs":[{"name":"","type":"address"},{"name":"","type":"address"}],"name":"allowance","outputs":[{"name":"","type":"uint256"}],"payable":false,"stateMutability":"view","type":"function"},{"payable":true,"stateMutability":"payable","type":"fallback"},{"anonymous":false,"inputs":[{"indexed":true,"name":"src","type":"address"},{"indexed":true,"name":"guy","type":"address"},{"indexed":false,"name":"wad","type":"uint256"}],"name":"Approval","type":"event"},{"anonymous":false,"inputs":[{"indexed":true,"name":"src","type":"address"},{"indexed":true,"name":"dst","type":"address"},{"indexed":false,"name":"wad","type":"uint256"}],"name":"Transfer","type":"event"},{"anonymous":false,"inputs":[{"indexed":true,"name":"dst","type":"address"},{"indexed":false,"name":"wad","type":"uint256"}],"name":"Deposit","type":"event"},{"anonymous":false,"inputs":[{"indexed":true,"name":"src","type":"address"},{"indexed":false,"name":"wad","type":"uint256"}],"name":"Withdrawal","type":"event"}]'
 
     BSCSCAN_API = "https://api.bscscan.com/api"
@@ -117,49 +116,41 @@ class FetchPairCreate:
 
     
     async def fetchPairUpdates(self):
-        
-        
-
-        
-
-
-        async def periodic():
-            # FIXME: This is super ugly...
-            while True:
-                try:
-                    contract = web3.eth.contract(address=self.PANCAKESWAP_FACTORY_ADDRESS, abi=self.pancakeswapFactoryAbi)
-                    paircreated_Event = contract.events.PairCreated() # Modification
-                    block_filter = web3.eth.filter({'fromBlock':'latest', 'address': self.PANCAKESWAP_FACTORY_ADDRESS})
-                    # log_loop(block_filter, 2)
-                    
-                    async def handle_event(event):
-                        receipt = web3.eth.waitForTransactionReceipt(event['transactionHash'])
-                        result = paircreated_Event.processReceipt(receipt) # Modification
-                        
-                        for resultItem in result:
-                            pair = await self.getPairFromEvent(resultItem)
-                            self.store.storePair(pair)
-                        # printDetails(result[0]['args'].token0, pair_abi)
+        while True:
+            try:
+                contract = web3.eth.contract(address=self.PANCAKESWAP_FACTORY_ADDRESS, abi=self.pancakeswapFactoryAbi)
+                paircreated_Event = contract.events.PairCreated() # Modification
+                block_filter = web3.eth.filter({'fromBlock':'latest', 'address': self.PANCAKESWAP_FACTORY_ADDRESS})
+                # log_loop(block_filter, 2)
                 
-                    while True:
-                        try:
-                            for event in block_filter.get_new_entries():
-                                await handle_event(event)
-                            await asyncio.sleep(1)
-                        except Exception as ex:
-                            print(ex) # do whatever you want for debugging.
-                            pass  
-                except Exception as ex:
-                    print(ex) # do whatever you want for debugging.
-                    pass  
-
-        # def stop():
-        #     task.cancel()
-        loop = asyncio.get_event_loop()
-        # loop.call_later(5, stop)
-        task = loop.create_task(periodic())
-
-        await task
+                async def handle_event(event):
+                    receipt = web3.eth.waitForTransactionReceipt(event['transactionHash'])
+                    result = paircreated_Event.processReceipt(receipt) # Modification
+                    
+                    for resultItem in result:
+                        pair = await self.getPairFromEvent(resultItem)
+                        self.store.storePair(pair)
+                    # printDetails(result[0]['args'].token0, pair_abi)
+            
+                while True:
+                    try:
+                        for event in block_filter.get_new_entries():
+                            await handle_event(event)
+                        await asyncio.sleep(1)
+                    except Exception as err:
+                        timeString = datetime.now().strftime("%H:%M:%S") 
+                        print(f"{timeString}: Exception in inner fetchPairUpdates: {err}")
+                        
+                        # TODO: Relocate to function
+                        contract = web3.eth.contract(address=self.PANCAKESWAP_FACTORY_ADDRESS, abi=self.pancakeswapFactoryAbi)
+                        paircreated_Event = contract.events.PairCreated() # Modification
+                        block_filter = web3.eth.filter({'fromBlock':'latest', 'address': self.PANCAKESWAP_FACTORY_ADDRESS})        
+                        pass  
+            except Exception as err:
+                timeString = datetime.now().strftime("%H:%M:%S") 
+                print(f"{timeString}: Exception in outer fetchPairUpdates: {err}")
+                pass  
+            time.sleep(6)
 
 async def main():
     fetchPairCreate = FetchPairCreate(os.environ.get('APITOKEN'))

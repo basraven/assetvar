@@ -9,6 +9,7 @@ import requests
 from web3 import Web3
 from web3.exceptions import ContractLogicError
 from models.PairPrice import PairPrice
+from models.Token import Token
 from modules.stores.StoreTimescaledb import StoreTimescaledb as Store
 
 # Source: https://paohuee.medium.com/interact-binance-smart-chain-using-python-4f8d745fe7b7
@@ -29,12 +30,9 @@ class FetchPairTicker:
 
     PANCAKESWAP_FACTORY_ADDRESS = "0xcA143Ce32Fe78f1f7019d7d551a6402fC5350c73"
     PANCAKESWAP_ROUTER_ADDRESS = "0x10ED43C718714eb63d5aA57B78B54704E256024E"
-    BNB_ADDRESS = "0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c"
-    USDT_ADDRESS = "0x55d398326f99059fF775485246999027B3197955"
+
     
-    SWAPPABLE_ADDRESSES = [BNB_ADDRESS, USDT_ADDRESS]
-    
-    STANDARD_ABI = '[{"constant":true,"inputs":[],"name":"name","outputs":[{"name":"","type":"string"}],"payable":false,"stateMutability":"view","type":"function"},{"constant":false,"inputs":[{"name":"guy","type":"address"},{"name":"wad","type":"uint256"}],"name":"approve","outputs":[{"name":"","type":"bool"}],"payable":false,"stateMutability":"nonpayable","type":"function"},{"constant":true,"inputs":[],"name":"totalSupply","outputs":[{"name":"","type":"uint256"}],"payable":false,"stateMutability":"view","type":"function"},{"constant":false,"inputs":[{"name":"src","type":"address"},{"name":"dst","type":"address"},{"name":"wad","type":"uint256"}],"name":"transferFrom","outputs":[{"name":"","type":"bool"}],"payable":false,"stateMutability":"nonpayable","type":"function"},{"constant":false,"inputs":[{"name":"wad","type":"uint256"}],"name":"withdraw","outputs":[],"payable":false,"stateMutability":"nonpayable","type":"function"},{"constant":true,"inputs":[],"name":"decimals","outputs":[{"name":"","type":"uint8"}],"payable":false,"stateMutability":"view","type":"function"},{"constant":true,"inputs":[{"name":"","type":"address"}],"name":"balanceOf","outputs":[{"name":"","type":"uint256"}],"payable":false,"stateMutability":"view","type":"function"},{"constant":true,"inputs":[],"name":"symbol","outputs":[{"name":"","type":"string"}],"payable":false,"stateMutability":"view","type":"function"},{"constant":false,"inputs":[{"name":"dst","type":"address"},{"name":"wad","type":"uint256"}],"name":"transfer","outputs":[{"name":"","type":"bool"}],"payable":false,"stateMutability":"nonpayable","type":"function"},{"constant":false,"inputs":[],"name":"deposit","outputs":[],"payable":true,"stateMutability":"payable","type":"function"},{"constant":true,"inputs":[{"name":"","type":"address"},{"name":"","type":"address"}],"name":"allowance","outputs":[{"name":"","type":"uint256"}],"payable":false,"stateMutability":"view","type":"function"},{"payable":true,"stateMutability":"payable","type":"fallback"},{"anonymous":false,"inputs":[{"indexed":true,"name":"src","type":"address"},{"indexed":true,"name":"guy","type":"address"},{"indexed":false,"name":"wad","type":"uint256"}],"name":"Approval","type":"event"},{"anonymous":false,"inputs":[{"indexed":true,"name":"src","type":"address"},{"indexed":true,"name":"dst","type":"address"},{"indexed":false,"name":"wad","type":"uint256"}],"name":"Transfer","type":"event"},{"anonymous":false,"inputs":[{"indexed":true,"name":"dst","type":"address"},{"indexed":false,"name":"wad","type":"uint256"}],"name":"Deposit","type":"event"},{"anonymous":false,"inputs":[{"indexed":true,"name":"src","type":"address"},{"indexed":false,"name":"wad","type":"uint256"}],"name":"Withdrawal","type":"event"}]'
+    STANDARD_ABI = '[{"constant":true,"inputs":[],"name":"name","outputs":[{"name":"","type":"string"}],"payable":false,"TokentateMutability":"view","type":"function"},{"constant":false,"inputs":[{"name":"guy","type":"address"},{"name":"wad","type":"uint256"}],"name":"approve","outputs":[{"name":"","type":"bool"}],"payable":false,"stateMutability":"nonpayable","type":"function"},{"constant":true,"inputs":[],"name":"totalSupply","outputs":[{"name":"","type":"uint256"}],"payable":false,"stateMutability":"view","type":"function"},{"constant":false,"inputs":[{"name":"src","type":"address"},{"name":"dst","type":"address"},{"name":"wad","type":"uint256"}],"name":"transferFrom","outputs":[{"name":"","type":"bool"}],"payable":false,"stateMutability":"nonpayable","type":"function"},{"constant":false,"inputs":[{"name":"wad","type":"uint256"}],"name":"withdraw","outputs":[],"payable":false,"stateMutability":"nonpayable","type":"function"},{"constant":true,"inputs":[],"name":"decimals","outputs":[{"name":"","type":"uint8"}],"payable":false,"stateMutability":"view","type":"function"},{"constant":true,"inputs":[{"name":"","type":"address"}],"name":"balanceOf","outputs":[{"name":"","type":"uint256"}],"payable":false,"stateMutability":"view","type":"function"},{"constant":true,"inputs":[],"name":"symbol","outputs":[{"name":"","type":"string"}],"payable":false,"stateMutability":"view","type":"function"},{"constant":false,"inputs":[{"name":"dst","type":"address"},{"name":"wad","type":"uint256"}],"name":"transfer","outputs":[{"name":"","type":"bool"}],"payable":false,"stateMutability":"nonpayable","type":"function"},{"constant":false,"inputs":[],"name":"deposit","outputs":[],"payable":true,"stateMutability":"payable","type":"function"},{"constant":true,"inputs":[{"name":"","type":"address"},{"name":"","type":"address"}],"name":"allowance","outputs":[{"name":"","type":"uint256"}],"payable":false,"stateMutability":"view","type":"function"},{"payable":true,"stateMutability":"payable","type":"fallback"},{"anonymous":false,"inputs":[{"indexed":true,"name":"src","type":"address"},{"indexed":true,"name":"guy","type":"address"},{"indexed":false,"name":"wad","type":"uint256"}],"name":"Approval","type":"event"},{"anonymous":false,"inputs":[{"indexed":true,"name":"src","type":"address"},{"indexed":true,"name":"dst","type":"address"},{"indexed":false,"name":"wad","type":"uint256"}],"name":"Transfer","type":"event"},{"anonymous":false,"inputs":[{"indexed":true,"name":"dst","type":"address"},{"indexed":false,"name":"wad","type":"uint256"}],"name":"Deposit","type":"event"},{"anonymous":false,"inputs":[{"indexed":true,"name":"src","type":"address"},{"indexed":false,"name":"wad","type":"uint256"}],"name":"Withdrawal","type":"event"}]'
 
     BSCSCAN_API = "https://api.bscscan.com/api"
     
@@ -78,11 +76,12 @@ class FetchPairTicker:
         try:
             bnbToSell = web3.toWei("1", "ether")        
             router = web3.eth.contract( abi=self.pancakeswapRouterAbi, address=web3.toChecksumAddress(self.PANCAKESWAP_ROUTER_ADDRESS) )
-            amountOut = router.functions.getAmountsOut(bnbToSell, [web3.toChecksumAddress(self.BNB_ADDRESS) , web3.toChecksumAddress(self.USDT_ADDRESS)]).call()
+            amountOut = router.functions.getAmountsOut(bnbToSell, [web3.toChecksumAddress(Token.BNB_ADDRESS) , web3.toChecksumAddress(Token.USDT_ADDRESS)]).call()
             self.bnbPrice =  web3.fromWei(number=amountOut[1], unit='ether')
             # print("BNB PRICE: " + str(self.bnbPrice))
         except Exception as err:
-            print(f"Exception occured while updating BNB price: {err}")
+            timeString = datetime.now().strftime("%H:%M:%S") 
+            print(f"{timeString}: Exception occured while updating BNB price: {err}")
             pass
         
 
@@ -91,7 +90,8 @@ class FetchPairTicker:
         try:
             self.activePairs = self.store.getActivePairs(idsOnly=True) #[-2:-1] # 0xd1fe404c759bedddbfb5dcdc1ccefa401a2cd5ea
         except Exception as err:
-            print(f"Exception occured while getting active pairs: {err}")
+            timeString = datetime.now().strftime("%H:%M:%S") 
+            print(f"{timeString}: Exception occured while getting active pairs: {err}")
             pass
         
     
@@ -100,19 +100,19 @@ class FetchPairTicker:
         async def fetchTick(pair, currentTime):
             try:
                 
-                if pair.token0 in self.SWAPPABLE_ADDRESSES:
+                if pair.token0 in Token.STABLE_TOKENS:
                     targetToken = pair.token1
-                    swappableToken = pair.token0
-                elif pair.token1 in self.SWAPPABLE_ADDRESSES:
+                    stableToken = pair.token0
+                elif pair.token1 in Token.STABLE_TOKENS:
                     targetToken = pair.token0
-                    swappableToken = pair.token1
+                    stableToken = pair.token1
                 else:
-                    print("Not found a swappable token\n \t pair %s \n \t token0 %s \n \t token1 %s" % (pair.address, pair.token0, pair.token1))
+                    print("Not found a stable token\n \t pair %s \n \t token0 %s \n \t token1 %s" % (pair.address, pair.token0, pair.token1))
                     return
                 
                 # TODO: Write to db instead of get at runtime
                 if targetToken not in self.targetTokenDecimals:
-                    print("Refreshing decimals from runtime cache for: " + targetToken)
+                    print("Added decimals details to runtime cache for: " + targetToken)
                     tokenRouter = web3.eth.contract( address=web3.toChecksumAddress(targetToken), abi=self.STANDARD_ABI )
                     self.targetTokenDecimals[targetToken] = tokenRouter.functions.decimals().call()
                 
@@ -132,17 +132,17 @@ class FetchPairTicker:
                     
                 
                 
-                if swappableToken == self.USDT_ADDRESS:
-                    priceBnb = 0
+                priceBnb = 0
+                if stableToken == Token.USDT_ADDRESS:
                     priceUsdt = amountOut
-                if swappableToken == self.BNB_ADDRESS:
+                if stableToken == Token.BNB_ADDRESS:
                     priceBnb = amountOut
                     priceUsdt = (amountOut * self.bnbPrice)
                 
                 
                 # print("BNB Price: " + str(priceBnb) + " in USDT: " + str(priceUsdt) )
                 
-                pairPrice = PairPrice(currentTime=currentTime, priceBnb=priceBnb, priceUsdt=priceUsdt, targetToken=targetToken, swappableToken=swappableToken, pairAddress=pair.address)
+                pairPrice = PairPrice(currentTime=currentTime, priceBnb=priceBnb, priceUsdt=priceUsdt, targetToken=targetToken, stableToken=stableToken, pairAddress=pair.address)
                 
                 return pairPrice
                 
@@ -150,7 +150,8 @@ class FetchPairTicker:
                 if "PancakeLibrary: INSUFFICIENT_LIQUIDITY" in str(err):
                     pass
                 else:
-                    print(f"Exception occured: {err}")
+                    timeString = datetime.now().strftime("%H:%M:%S") 
+                    print(f"{timeString}: Exception occured: {err}")
                 pass
 
 
