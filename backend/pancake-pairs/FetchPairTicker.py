@@ -7,14 +7,15 @@ from datetime import datetime
 
 import requests
 from web3 import Web3
-
-from models.Pair import Pair
-from models.Token import Token
+from web3.exceptions import ContractLogicError
+from models.PairPrice import PairPrice
 from modules.stores.StoreTimescaledb import StoreTimescaledb as Store
 
-#source: https://paohuee.medium.com/interact-binance-smart-chain-using-python-4f8d745fe7b7
+# Source: https://paohuee.medium.com/interact-binance-smart-chain-using-python-4f8d745fe7b7
+# Source: https://gist.github.com/Linch1/ede03999f483f2b1d5fcac9e8b312f2c
 
 warnings.filterwarnings("ignore", message="divide by zero encountered in divide")
+warnings.filterwarnings("ignore", message=".*INSUFFICIENT_LIQUIDIT.*")
 
 web3 = Web3(Web3.HTTPProvider("https://bsc-dataseed.binance.org/"))
 print(web3.isConnected())
@@ -22,10 +23,17 @@ print(web3.isConnected())
 class FetchPairTicker:
 
     apiKey = ""
+    bnbPrice = 0
+    targetTokenDecimals = dict()
+    lastPrice = dict()
 
     PANCAKESWAP_FACTORY_ADDRESS = "0xcA143Ce32Fe78f1f7019d7d551a6402fC5350c73"
-    pancakeswapFactoryAbi = ""
-    BNB_ADDRESS = "0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c" # Hack
+    PANCAKESWAP_ROUTER_ADDRESS = "0x10ED43C718714eb63d5aA57B78B54704E256024E"
+    BNB_ADDRESS = "0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c"
+    USDT_ADDRESS = "0x55d398326f99059fF775485246999027B3197955"
+    
+    SWAPPABLE_ADDRESSES = [BNB_ADDRESS, USDT_ADDRESS]
+    
     STANDARD_ABI = '[{"constant":true,"inputs":[],"name":"name","outputs":[{"name":"","type":"string"}],"payable":false,"stateMutability":"view","type":"function"},{"constant":false,"inputs":[{"name":"guy","type":"address"},{"name":"wad","type":"uint256"}],"name":"approve","outputs":[{"name":"","type":"bool"}],"payable":false,"stateMutability":"nonpayable","type":"function"},{"constant":true,"inputs":[],"name":"totalSupply","outputs":[{"name":"","type":"uint256"}],"payable":false,"stateMutability":"view","type":"function"},{"constant":false,"inputs":[{"name":"src","type":"address"},{"name":"dst","type":"address"},{"name":"wad","type":"uint256"}],"name":"transferFrom","outputs":[{"name":"","type":"bool"}],"payable":false,"stateMutability":"nonpayable","type":"function"},{"constant":false,"inputs":[{"name":"wad","type":"uint256"}],"name":"withdraw","outputs":[],"payable":false,"stateMutability":"nonpayable","type":"function"},{"constant":true,"inputs":[],"name":"decimals","outputs":[{"name":"","type":"uint8"}],"payable":false,"stateMutability":"view","type":"function"},{"constant":true,"inputs":[{"name":"","type":"address"}],"name":"balanceOf","outputs":[{"name":"","type":"uint256"}],"payable":false,"stateMutability":"view","type":"function"},{"constant":true,"inputs":[],"name":"symbol","outputs":[{"name":"","type":"string"}],"payable":false,"stateMutability":"view","type":"function"},{"constant":false,"inputs":[{"name":"dst","type":"address"},{"name":"wad","type":"uint256"}],"name":"transfer","outputs":[{"name":"","type":"bool"}],"payable":false,"stateMutability":"nonpayable","type":"function"},{"constant":false,"inputs":[],"name":"deposit","outputs":[],"payable":true,"stateMutability":"payable","type":"function"},{"constant":true,"inputs":[{"name":"","type":"address"},{"name":"","type":"address"}],"name":"allowance","outputs":[{"name":"","type":"uint256"}],"payable":false,"stateMutability":"view","type":"function"},{"payable":true,"stateMutability":"payable","type":"fallback"},{"anonymous":false,"inputs":[{"indexed":true,"name":"src","type":"address"},{"indexed":true,"name":"guy","type":"address"},{"indexed":false,"name":"wad","type":"uint256"}],"name":"Approval","type":"event"},{"anonymous":false,"inputs":[{"indexed":true,"name":"src","type":"address"},{"indexed":true,"name":"dst","type":"address"},{"indexed":false,"name":"wad","type":"uint256"}],"name":"Transfer","type":"event"},{"anonymous":false,"inputs":[{"indexed":true,"name":"dst","type":"address"},{"indexed":false,"name":"wad","type":"uint256"}],"name":"Deposit","type":"event"},{"anonymous":false,"inputs":[{"indexed":true,"name":"src","type":"address"},{"indexed":false,"name":"wad","type":"uint256"}],"name":"Withdrawal","type":"event"}]'
 
     BSCSCAN_API = "https://api.bscscan.com/api"
@@ -40,6 +48,7 @@ class FetchPairTicker:
 
     async def fetchPancakeSwapAbi(self):
         self.pancakeswapFactoryAbi = await self.getAbi(self.PANCAKESWAP_FACTORY_ADDRESS)
+        self.pancakeswapRouterAbi = await self.getAbi(self.PANCAKESWAP_ROUTER_ADDRESS)
         
     async def getAbi(self, address):
         contract_address = web3.toChecksumAddress(address)
@@ -52,110 +61,98 @@ class FetchPairTicker:
             return response["result"]
             
 
-    def getPairDetails(self, contract, abi):
-        contract_address = web3.toChecksumAddress(contract)
-        contract = web3.eth.contract(address=contract_address, abi=abi)
-        totalSupply = contract.functions.totalSupply().call()
-        contractName = contract.functions.name().call()
-        contractSymbol = contract.functions.symbol().call()
-        # print("\nFor Contract:", contract_address)
-        # print("\tTotal Supply:", totalSupply)
-        # print("\tContract Name:", contractName)
-        # print("\tContract Symbol:", contractSymbol)
-        return [totalSupply , contractName, contractSymbol]
+    def getCorrectedDecimals(self, number, decimals ):
+        number = str(number)
+        numberAbs = number.split('.')[0]
+        
+        numberDecimals = ''
+        if len(number.split(".")) > 1:
+            numberDecimals = number.split('.')[1]
+        while( len(numberDecimals) < decimals ):
+            numberDecimals += "0"
+        
+        return int(numberAbs + numberDecimals)
 
-    # async def fetchPairUpdate(self):
-        # address = "0x6897CBB72834A1586154EE6b68a114cc5311f2B6"
-        # self.getPairDetails(address, await self.getAbi(address))
-    
-    async def getPairFromEvent(self, event):
-        startTime = datetime.now()
-        
-        token0Address = event["args"]["token0"]
-        [totalSupply , contractName, contractSymbol] = self.getPairDetails(token0Address, await self.getAbi(token0Address) or self.STANDARD_ABI)
-        token0 = Token(
-            tokenAddress = token0Address,
-            name = contractName,
-            symbol = contractSymbol,
-            startTime = startTime,
-            atBlockNr = event["blockNumber"],
-            atBlockHash = event["blockHash"],
-            transactionIndex = event["transactionIndex"],
-            transactionHash = event["transactionHash"],
-            totalSupply = totalSupply,
-            active = True
-        )
-        
-        token1Address = event["args"]["token1"]
-        [totalSupply , contractName, contractSymbol] = self.getPairDetails(token1Address, await self.getAbi(token1Address) or self.STANDARD_ABI)
-        token1 = Token(
-            tokenAddress = token1Address,
-            name = contractName,
-            symbol = contractSymbol,
-            startTime = startTime,
-            atBlockNr = event["blockNumber"],
-            atBlockHash = event["blockHash"],
-            transactionIndex = event["transactionIndex"],
-            transactionHash = event["transactionHash"],
-            totalSupply = totalSupply,
-            active = True
-        )
-        
-        pair = Pair(
-            token0 = token0,
-            token1 = token1,
-            address = event["args"]["pair"],
-            startTime = startTime,
-            atBlockNr = event["blockNumber"],
-            atBlockHash = event["blockHash"],
-            transactionIndex = event["transactionIndex"],
-            transactionHash = event["transactionHash"],
-        )
-        return pair
 
+    async def updateBNBToUSDTPrice(self):
+        bnbToSell = web3.toWei("1", "ether")        
+        router = web3.eth.contract( abi=self.pancakeswapRouterAbi, address=web3.toChecksumAddress(self.PANCAKESWAP_ROUTER_ADDRESS) )
+        amountOut = router.functions.getAmountsOut(bnbToSell, [web3.toChecksumAddress(self.BNB_ADDRESS) , web3.toChecksumAddress(self.USDT_ADDRESS)]).call()
+        self.bnbPrice =  web3.fromWei(number=amountOut[1], unit='ether')
+        # print("BNB PRICE: " + str(self.bnbPrice))
+        
 
     async def getActivePairList(self):        
         # TODO: delta logic
-        self.activePairs = self.store.getActivePairs(idOnly=True)
+        self.activePairs = self.store.getActivePairs(idsOnly=True)[-2:-1] # 0xd1fe404c759bedddbfb5dcdc1ccefa401a2cd5ea
     
     async def fetchPairTicks(self):
         
-        await self.getActivePairList()
-        print(self.activePairs)
-        
-        # contract = web3.eth.contract(address=self.PANCAKESWAP_FACTORY_ADDRESS, abi=self.pancakeswapFactoryAbi)
-        # paircreated_Event = contract.events.PairCreated() # Modification
+        async def fetchTick(pair, currentTime):
+            try:
+                
+                if pair.token0 in self.SWAPPABLE_ADDRESSES:
+                    targetToken = pair.token1
+                    swappableToken = pair.token0
+                elif pair.token1 in self.SWAPPABLE_ADDRESSES:
+                    targetToken = pair.token0
+                    swappableToken = pair.token1
+                else:
+                    print("Not found a swappable token\n \t pair %s \n \t token0 %s \n \t token1 %s" % (pair.address, pair.token0, pair.token1))
+                    return
+                
+                # TODO: Write to db instead of get at runtime
+                if targetToken not in self.targetTokenDecimals:
+                    print("Refreshing decimals from runtime cache for: " + targetToken)
+                    tokenRouter = web3.eth.contract( address=web3.toChecksumAddress(targetToken), abi=self.STANDARD_ABI )
+                    self.targetTokenDecimals[targetToken] = tokenRouter.functions.decimals().call()
+                
+                # Amount of tokens we want the price for is always 1
+                tokensToSell = self.getCorrectedDecimals(1, self.targetTokenDecimals[targetToken])
+
+                router = web3.eth.contract( abi=self.pancakeswapRouterAbi, address=web3.toChecksumAddress(self.PANCAKESWAP_ROUTER_ADDRESS) )
+                # Using token0 and token1 here because the order is important
+                amountOut = router.functions.getAmountsOut(int(tokensToSell), [web3.toChecksumAddress(pair.token0) , web3.toChecksumAddress(pair.token1)]).call()
+                amountOut =  web3.fromWei(number=amountOut[1], unit='ether')
+                
+                if pair.address not in self.lastPrice:
+                    self.lastPrice[pair.address] = amountOut
+                elif self.lastPrice[pair.address] == amountOut:
+                    # Lets only update the db is there is something to update it for
+                    return
+                    
+                
+                
+                if swappableToken == self.USDT_ADDRESS:
+                    priceBnb = 0
+                    priceUsdt = amountOut
+                if swappableToken == self.BNB_ADDRESS:
+                    priceBnb = amountOut
+                    priceUsdt = (amountOut * self.bnbPrice)
+                
+                
+                # print("BNB Price: " + str(priceBnb) + " in USDT: " + str(priceUsdt) )
+                
+                pairPrice = PairPrice(currentTime=currentTime, priceBnb=priceBnb, priceUsdt=priceUsdt, targetToken=targetToken, swappableToken=swappableToken, pairAddress=pair.address)
+                
+                return pairPrice
+                
+            except Exception as err:
+                if "PancakeLibrary: INSUFFICIENT_LIQUIDITY" in str(err):
+                    pass
+                else:
+                    print(f"Exception occured: {err}")
+                pass
 
 
-        # warnings.filterwarnings('ignore', '.*The event signature did not match the provided ABI.*', )
-        # block_filter = web3.eth.filter({'fromBlock':'latest', 'address': self.PANCAKESWAP_FACTORY_ADDRESS})
-        # # log_loop(block_filter, 2)
-        
-        # async def handle_event(event):
-        #     receipt = web3.eth.waitForTransactionReceipt(event['transactionHash'])
-        #     result = paircreated_Event.processReceipt(receipt) # Modification
+        while True:
+            await self.getActivePairList()
+            await self.updateBNBToUSDTPrice()
+            currentTime = datetime.now()
+            self.store.storePairPriceList( await asyncio.gather(*[fetchTick(pair=pair, currentTime=currentTime) for pair in self.activePairs]) )
+            print("\n---")
+            await asyncio.sleep(10)
             
-        #     for resultItem in result:
-        #         pair = await self.getPairFromEvent(resultItem)
-        #         self.store.storePair(pair)
-        #     # printDetails(result[0]['args'].token0, pair_abi)
-
-        
-
-
-        # async def periodic(event_filter):
-        #     while True:
-        #         for event in event_filter.get_new_entries():
-        #             await handle_event(event)
-        #         await asyncio.sleep(1)
-
-        # # def stop():
-        # #     task.cancel()
-        # loop = asyncio.get_event_loop()
-        # # loop.call_later(5, stop)
-        # task = loop.create_task(periodic(block_filter))
-
-        # await task
 
 async def main():
     fetchPairTicker = FetchPairTicker(os.environ.get('APITOKEN'))

@@ -1,4 +1,7 @@
 import psycopg2
+from psycopg2 import extras
+
+from models.Pair import Pair
 
 CONNECTION_STRING = "postgres://postgres:password@192.168.3.77:5432"
 class StoreTimescaledb:
@@ -47,13 +50,13 @@ class StoreTimescaledb:
       self.cur.execute (exists_query, (address,))
       return self.cur.fetchone()[0] 
     
-  def getActivePairs(self, idOnly=True):
+  def getActivePairs(self, idsOnly=True):
     with self.connection:
-      if idOnly:
-        self.cur.execute("SELECT address FROM assetvar_data.pair WHERE active = true;")
+      if idsOnly:
+        self.cur.execute("SELECT address, token0Address, token1Address FROM assetvar_data.pair WHERE active = true;")
       else:
         self.cur.execute("SELECT * FROM assetvar_data.pair WHERE active = true;")
-      return [item[0] for item in self.cur.fetchall()] 
+      return [Pair(address=item[0], token0=item[1], token1=item[2], active=True ) for item in self.cur.fetchall()] 
     
     
 
@@ -75,7 +78,7 @@ class StoreTimescaledb:
             token.active
           )
         )
-      self.connection.commit()
+        self.connection.commit()
   
 
   def storePair(self, pair):
@@ -100,3 +103,12 @@ class StoreTimescaledb:
     else: # do some update?
       pass
   
+  def storePairPriceList(self, PairPriceList):
+    with self.connection:
+      insert_query = 'INSERT INTO assetvar_data.pair_price(currentTime, pairAddress, priceBnb, priceUsdt, targetToken, swappableToken) VALUES %s'
+      extras.execute_values (
+          self.cur, insert_query, [(pairPrice.currentTime, pairPrice.pairAddress, pairPrice.priceBnb, pairPrice.priceUsdt, pairPrice.targetToken, pairPrice.swappableToken) for pairPrice in PairPriceList if pairPrice], template=None, page_size=100
+      )
+      
+      self.connection.commit()
+    

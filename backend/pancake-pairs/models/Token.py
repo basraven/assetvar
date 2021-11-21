@@ -6,6 +6,7 @@ class Token:
     tokenAddress = None
     name = None
     symbol = None
+    decimals = None
     startTime = None
     endTime = None
     atBlockNr = None
@@ -16,10 +17,11 @@ class Token:
     active = None
     lastUpdated = None 
     
-    def __init__(self, tokenAddress = None, name = None, symbol = None, startTime = None, endTime = None, atBlockNr = None, atBlockHash = None, transactionIndex = None, transactionHash = None, totalSupply = None, active = None, lastUpdated = None):
+    def __init__(self, tokenAddress = None, name = None, symbol = None, decimals = None, startTime = None, endTime = None, atBlockNr = None, atBlockHash = None, transactionIndex = None, transactionHash = None, totalSupply = None, active = None, lastUpdated = None):
         self.tokenAddress = tokenAddress
         self.name = name
         self.symbol = symbol
+        self.decimals = decimals
         self.startTime = startTime
         self.endTime = endTime
         self.atBlockNr = atBlockNr

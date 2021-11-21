@@ -141,10 +141,9 @@ class FetchPairCreate:
                     for event in event_filter.get_new_entries():
                         await handle_event(event)
                     await asyncio.sleep(1)
-                except:
-                    print("Error in the Period While loop")
-                    time.sleep(3)
-                    pass
+                except Exception as ex:
+                    print(ex) # do whatever you want for debugging.
+                    raise    # re-raise exception.
                     
 
         # def stop():
