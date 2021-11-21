@@ -15,9 +15,12 @@ from modules.stores.StoreTimescaledb import StoreTimescaledb as Store
 #source: https://paohuee.medium.com/interact-binance-smart-chain-using-python-4f8d745fe7b7
 
 warnings.filterwarnings("ignore", message="divide by zero encountered in divide")
+warnings.filterwarnings('ignore', '.*The event signature did not match the provided ABI.*', )
 
 web3 = Web3(Web3.HTTPProvider("https://bsc-dataseed.binance.org/"))
 print(web3.isConnected())
+        
+
 
 class FetchPairCreate:
 
@@ -115,42 +118,46 @@ class FetchPairCreate:
     
     async def fetchPairUpdates(self):
         
-        contract = web3.eth.contract(address=self.PANCAKESWAP_FACTORY_ADDRESS, abi=self.pancakeswapFactoryAbi)
-        paircreated_Event = contract.events.PairCreated() # Modification
-
-
-        warnings.filterwarnings('ignore', '.*The event signature did not match the provided ABI.*', )
-        block_filter = web3.eth.filter({'fromBlock':'latest', 'address': self.PANCAKESWAP_FACTORY_ADDRESS})
-        # log_loop(block_filter, 2)
         
-        async def handle_event(event):
-            receipt = web3.eth.waitForTransactionReceipt(event['transactionHash'])
-            result = paircreated_Event.processReceipt(receipt) # Modification
-            
-            for resultItem in result:
-                pair = await self.getPairFromEvent(resultItem)
-                self.store.storePair(pair)
-            # printDetails(result[0]['args'].token0, pair_abi)
 
         
 
 
-        async def periodic(event_filter):
+        async def periodic():
+            # FIXME: This is super ugly...
             while True:
                 try:
-                    for event in event_filter.get_new_entries():
-                        await handle_event(event)
-                    await asyncio.sleep(1)
+                    contract = web3.eth.contract(address=self.PANCAKESWAP_FACTORY_ADDRESS, abi=self.pancakeswapFactoryAbi)
+                    paircreated_Event = contract.events.PairCreated() # Modification
+                    block_filter = web3.eth.filter({'fromBlock':'latest', 'address': self.PANCAKESWAP_FACTORY_ADDRESS})
+                    # log_loop(block_filter, 2)
+                    
+                    async def handle_event(event):
+                        receipt = web3.eth.waitForTransactionReceipt(event['transactionHash'])
+                        result = paircreated_Event.processReceipt(receipt) # Modification
+                        
+                        for resultItem in result:
+                            pair = await self.getPairFromEvent(resultItem)
+                            self.store.storePair(pair)
+                        # printDetails(result[0]['args'].token0, pair_abi)
+                
+                    while True:
+                        try:
+                            for event in block_filter.get_new_entries():
+                                await handle_event(event)
+                            await asyncio.sleep(1)
+                        except Exception as ex:
+                            print(ex) # do whatever you want for debugging.
+                            pass  
                 except Exception as ex:
                     print(ex) # do whatever you want for debugging.
-                    raise    # re-raise exception.
-                    
+                    pass  
 
         # def stop():
         #     task.cancel()
         loop = asyncio.get_event_loop()
         # loop.call_later(5, stop)
-        task = loop.create_task(periodic(block_filter))
+        task = loop.create_task(periodic())
 
         await task
 

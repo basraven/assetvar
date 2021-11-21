@@ -75,16 +75,25 @@ class FetchPairTicker:
 
 
     async def updateBNBToUSDTPrice(self):
-        bnbToSell = web3.toWei("1", "ether")        
-        router = web3.eth.contract( abi=self.pancakeswapRouterAbi, address=web3.toChecksumAddress(self.PANCAKESWAP_ROUTER_ADDRESS) )
-        amountOut = router.functions.getAmountsOut(bnbToSell, [web3.toChecksumAddress(self.BNB_ADDRESS) , web3.toChecksumAddress(self.USDT_ADDRESS)]).call()
-        self.bnbPrice =  web3.fromWei(number=amountOut[1], unit='ether')
-        # print("BNB PRICE: " + str(self.bnbPrice))
+        try:
+            bnbToSell = web3.toWei("1", "ether")        
+            router = web3.eth.contract( abi=self.pancakeswapRouterAbi, address=web3.toChecksumAddress(self.PANCAKESWAP_ROUTER_ADDRESS) )
+            amountOut = router.functions.getAmountsOut(bnbToSell, [web3.toChecksumAddress(self.BNB_ADDRESS) , web3.toChecksumAddress(self.USDT_ADDRESS)]).call()
+            self.bnbPrice =  web3.fromWei(number=amountOut[1], unit='ether')
+            # print("BNB PRICE: " + str(self.bnbPrice))
+        except Exception as err:
+            print(f"Exception occured while updating BNB price: {err}")
+            pass
         
 
     async def getActivePairList(self):        
         # TODO: delta logic
-        self.activePairs = self.store.getActivePairs(idsOnly=True)[-2:-1] # 0xd1fe404c759bedddbfb5dcdc1ccefa401a2cd5ea
+        try:
+            self.activePairs = self.store.getActivePairs(idsOnly=True) #[-2:-1] # 0xd1fe404c759bedddbfb5dcdc1ccefa401a2cd5ea
+        except Exception as err:
+            print(f"Exception occured while getting active pairs: {err}")
+            pass
+        
     
     async def fetchPairTicks(self):
         
@@ -151,7 +160,7 @@ class FetchPairTicker:
             currentTime = datetime.now()
             self.store.storePairPriceList( await asyncio.gather(*[fetchTick(pair=pair, currentTime=currentTime) for pair in self.activePairs]) )
             print("\n---")
-            await asyncio.sleep(10)
+            await asyncio.sleep(30)
             
 
 async def main():
