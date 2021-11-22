@@ -1,0 +1,71 @@
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: fetchpaircreate-config
+  namespace: assetvar
+data:
+  run.sh: |-
+    #!/bin/bash
+    git clone https://github.com/basraven/assetvar.git assetvar
+    cd assetvar/backend/pancake-pairs
+    pip3 install -r requirements.txt 2>/dev/null
+    python3 FetchPairCreate.py
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: fetchpaircreate
+  namespace: assetvar
+spec:
+
+  replicas: 1
+  selector:
+    matchLabels:
+      k8s-app: fetchpaircreate
+  template:
+    metadata:
+      labels:
+        k8s-app: fetchpaircreate
+    spec:
+      dnsConfig:
+        # Not sure if this is really needed...
+        nameservers:
+          - 8.8.8.8
+
+      # Essential
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+            - matchExpressions:
+              - key: la1r.workload/essential
+                operator: In
+                values:
+                - "true"
+      priorityClassName: essential
+
+      containers:
+      - name: fetchpaircreate
+        resources:
+        image: python:3.8
+        command: ["/tmp/run.sh"]
+        env:
+        - name: APITOKEN 
+          valueFrom:
+            secretKeyRef:
+              name: bscscan-ro
+              key: BSCSCAN_API_KEY
+        volumeMounts:
+        - name: fetchpaircreate-config
+          mountPath: /tmp/run.sh
+          subPath: run.sh
+      volumes:
+      - name: fetchpaircreate-config
+        configMap:
+          name: fetchpaircreate-config
+          items:
+          - key: run.sh
+            path: run.sh
+          defaultMode: 0744

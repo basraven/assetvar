@@ -1,0 +1,71 @@
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: fetchpairticker-config
+  namespace: assetvar
+data:
+  run.sh: |-
+    #!/bin/bash
+    git clone https://github.com/basraven/assetvar.git assetvar
+    cd assetvar/backend/pancake-pairs
+    pip3 install -r requirements.txt 2>/dev/null
+    python3 FetchPairTicker.py
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: fetchpairticker
+  namespace: assetvar
+spec:
+
+  replicas: 1
+  selector:
+    matchLabels:
+      k8s-app: fetchpairticker
+  template:
+    metadata:
+      labels:
+        k8s-app: fetchpairticker
+    spec:
+      dnsConfig:
+        # Not sure if this is really needed...
+        nameservers:
+          - 8.8.8.8
+
+      # Essential
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+            - matchExpressions:
+              - key: la1r.workload/essential
+                operator: In
+                values:
+                - "true"
+      priorityClassName: essential
+
+      containers:
+      - name: fetchpairticker
+        resources:
+        image: python:3.8
+        command: ["/tmp/run.sh"]
+        env:
+        - name: APITOKEN 
+          valueFrom:
+            secretKeyRef:
+              name: bscscan-ro
+              key: BSCSCAN_API_KEY
+        volumeMounts:
+        - name: fetchpairticker-config
+          mountPath: /tmp/run.sh
+          subPath: run.sh
+      volumes:
+      - name: fetchpairticker-config
+        configMap:
+          name: fetchpairticker-config
+          items:
+          - key: run.sh
+            path: run.sh
+          defaultMode: 0744

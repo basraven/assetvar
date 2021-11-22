@@ -5,9 +5,9 @@ metadata:
   name: metabase-claim
   namespace: assetvar
 spec:
-  storageClassName: nfs-112
+  storageClassName: hdd-ha
   accessModes:
-    - ReadWriteMany
+    - ReadWriteOnce
   resources:
     requests:
       storage: 10Gi
