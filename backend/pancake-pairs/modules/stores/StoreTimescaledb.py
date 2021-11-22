@@ -3,7 +3,7 @@ from psycopg2 import extras
 
 from models.Pair import Pair
 
-CONNECTION_STRING = "postgres://postgres:password@192.168.3.77:5432"
+CONNECTION_STRING = "postgres://postgres:password@192.168.6.69:5432"
 class StoreTimescaledb:
 
   def __init__(self):
