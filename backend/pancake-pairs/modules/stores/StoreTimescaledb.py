@@ -105,10 +105,14 @@ class StoreTimescaledb:
   
   def storePairPriceList(self, PairPriceList):
     with self.connection:
-      insert_query = 'INSERT INTO assetvar_data.pair_price(currentTime, pairAddress, priceBnb, priceUsdt, targetToken, stableToken) VALUES %s'
+      insert_query = 'INSERT INTO assetvar_data.pair_price(currentTime, pairAddress, priceStableCoin, priceUsdt, targetToken, stableCoin) VALUES %s'
       extras.execute_values (
-          self.cur, insert_query, [(pairPrice.currentTime, pairPrice.pairAddress, pairPrice.priceBnb, pairPrice.priceUsdt, pairPrice.targetToken, pairPrice.stableToken) for pairPrice in PairPriceList if pairPrice], template=None, page_size=100
+          self.cur, insert_query, [(pairPrice.currentTime, pairPrice.pairAddress, pairPrice.priceStableCoin, pairPrice.priceUsdt, pairPrice.targetToken, pairPrice.stableCoin) for pairPrice in PairPriceList if pairPrice], template=None, page_size=100
       )
       
-      self.connection.commit()
+    self.connection.commit()
     
+  def markUnactive(self, pair):
+    with self.connection:
+      self.cur.execute("UPDATE assetvar_data.pair SET active=FALSE WHERE address = '%s';" % (str(pair.address)) )
+    self.connection.commit()

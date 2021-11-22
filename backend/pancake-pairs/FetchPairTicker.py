@@ -24,7 +24,7 @@ print(web3.isConnected())
 class FetchPairTicker:
 
     apiKey = ""
-    bnbPrice = 0
+    stableCoinPrices = dict()
     targetTokenDecimals = dict()
     lastPrice = dict()
 
@@ -72,17 +72,21 @@ class FetchPairTicker:
         return int(numberAbs + numberDecimals)
 
 
-    async def updateBNBToUSDTPrice(self):
-        try:
-            bnbToSell = web3.toWei("1", "ether")        
-            router = web3.eth.contract( abi=self.pancakeswapRouterAbi, address=web3.toChecksumAddress(self.PANCAKESWAP_ROUTER_ADDRESS) )
-            amountOut = router.functions.getAmountsOut(bnbToSell, [web3.toChecksumAddress(Token.BNB_ADDRESS) , web3.toChecksumAddress(Token.USDT_ADDRESS)]).call()
-            self.bnbPrice =  web3.fromWei(number=amountOut[1], unit='ether')
-            # print("BNB PRICE: " + str(self.bnbPrice))
-        except Exception as err:
-            timeString = datetime.now().strftime("%H:%M:%S") 
-            print(f"{timeString}: Exception occured while updating BNB price: {err}")
-            pass
+    async def updateStableCoinsToUSDTPrice(self):
+        for stableCoinName in Token.STABLE_COINS:
+            try:
+                if stableCoinName == "USDT":
+                    self.stableCoinPrices[stableCoinName] = 1
+                    continue
+                stableCoinToSell = web3.toWei("1", "ether")        
+                router = web3.eth.contract( abi=self.pancakeswapRouterAbi, address=web3.toChecksumAddress(self.PANCAKESWAP_ROUTER_ADDRESS) )
+                amountOut = router.functions.getAmountsOut(stableCoinToSell, [web3.toChecksumAddress(Token.STABLE_COINS[stableCoinName]) , web3.toChecksumAddress(Token.STABLE_COINS["USDT"])]).call()
+                self.stableCoinPrices[stableCoinName] =  web3.fromWei(number=amountOut[1], unit='ether')
+                print("%s price: %s" % (stableCoinName, str(self.stableCoinPrices[stableCoinName]) ))
+            except Exception as err:
+                timeString = datetime.now().strftime("%H:%M:%S") 
+                print(f"{timeString}: Exception occured while updating {stableCoinName} price: {err}")
+                pass
         
 
     async def getActivePairList(self):        
@@ -100,19 +104,21 @@ class FetchPairTicker:
         async def fetchTick(pair, currentTime):
             try:
                 
-                if pair.token0 in Token.STABLE_TOKENS:
+                if pair.token0 in Token.STABLE_COINS.values():
                     targetToken = pair.token1
-                    stableToken = pair.token0
-                elif pair.token1 in Token.STABLE_TOKENS:
+                    stableCoin = pair.token0
+                elif pair.token1 in Token.STABLE_COINS.values():
                     targetToken = pair.token0
-                    stableToken = pair.token1
+                    stableCoin = pair.token1
                 else:
-                    print("Not found a stable token\n \t pair %s \n \t token0 %s \n \t token1 %s" % (pair.address, pair.token0, pair.token1))
+                    # print("Not found a stable coin\n \t pair %s \n \t token0 %s \n \t token1 %s" % (pair.address, pair.token0, pair.token1))
+                    self.activePairs.remove(pair)
+                    self.store.markUnactive(pair)
                     return
                 
                 # TODO: Write to db instead of get at runtime
                 if targetToken not in self.targetTokenDecimals:
-                    print("Added decimals details to runtime cache for: " + targetToken)
+                    # print("Added decimals details to runtime cache for: " + targetToken)
                     tokenRouter = web3.eth.contract( address=web3.toChecksumAddress(targetToken), abi=self.STANDARD_ABI )
                     self.targetTokenDecimals[targetToken] = tokenRouter.functions.decimals().call()
                 
@@ -129,22 +135,19 @@ class FetchPairTicker:
                 elif self.lastPrice[pair.address] == amountOut:
                     # Lets only update the db is there is something to update it for
                     return
-                    
                 
-                
-                priceBnb = 0
-                if stableToken == Token.USDT_ADDRESS:
+                priceStableCoin = 0
+                if stableCoin == Token.STABLE_COINS["USDT"]:
                     priceUsdt = amountOut
-                if stableToken == Token.BNB_ADDRESS:
-                    priceBnb = amountOut
-                    priceUsdt = (amountOut * self.bnbPrice)
+                if stableCoin in Token.STABLE_COINS.values():
+                    stableCoinName = [k for k, v in Token.STABLE_COINS.items() if v == stableCoin][0]
+                    priceStableCoin = amountOut
+                    priceUsdt = (priceStableCoin * self.stableCoinPrices[stableCoinName])
+                    
+                                
+                # print("BNB Price: " + str(priceStablecoin) + " in USDT: " + str(priceUsdt) )
                 
-                
-                # print("BNB Price: " + str(priceBnb) + " in USDT: " + str(priceUsdt) )
-                
-                pairPrice = PairPrice(currentTime=currentTime, priceBnb=priceBnb, priceUsdt=priceUsdt, targetToken=targetToken, stableToken=stableToken, pairAddress=pair.address)
-                
-                return pairPrice
+                return PairPrice(currentTime=currentTime, pairAddress=pair.address, priceStableCoin=priceStableCoin, priceUsdt=priceUsdt, targetToken=targetToken, stableCoin=stableCoin)
                 
             except Exception as err:
                 if "PancakeLibrary: INSUFFICIENT_LIQUIDITY" in str(err):
@@ -152,12 +155,12 @@ class FetchPairTicker:
                 else:
                     timeString = datetime.now().strftime("%H:%M:%S") 
                     print(f"{timeString}: Exception occured: {err}")
-                pass
+                # pass
 
 
         while True:
             await self.getActivePairList()
-            await self.updateBNBToUSDTPrice()
+            await self.updateStableCoinsToUSDTPrice()
             currentTime = datetime.now()
             self.store.storePairPriceList( await asyncio.gather(*[fetchTick(pair=pair, currentTime=currentTime) for pair in self.activePairs]) )
             print("\n---")
