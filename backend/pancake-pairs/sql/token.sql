@@ -3,6 +3,7 @@ CREATE TABLE assetvar_data.token (
   tokenAddress        CHAR(42)          NOT NULL,
   name                VARCHAR(128)      NOT NULL,
   symbol              VARCHAR(64)       NOT NULL,
+  decimals            INT               NULL,
   startTime           TIMESTAMP       DEFAULT NOW(),
   endTime             TIMESTAMP       ,
   atBlockNr           DECIMAL           NOT NULL,

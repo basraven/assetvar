@@ -2,16 +2,19 @@ import psycopg2
 from psycopg2 import extras
 
 from models.Pair import Pair
+from models.PairPrice import PairPrice
+from models.Token import Token
 
-CONNECTION_STRING = "postgres://postgres:password@192.168.6.69:5432"
+DEFAULT_CONNECTION_STRING = "postgres://postgres:password@192.168.6.69:5432"
 class StoreTimescaledb:
 
   def __init__(self):
     self.connection = None
     self.cur = None
 
-  def connect(self):  
-    self.connection = psycopg2.connect(CONNECTION_STRING)
+  def connect(self, connectionString=None):  
+    self.connectionString = connectionString or DEFAULT_CONNECTION_STRING
+    self.connection = psycopg2.connect(self.connectionString)
     self.cur = self.connection.cursor()
     return self.connection
 
@@ -39,16 +42,16 @@ class StoreTimescaledb:
       return self.cur.fetchone()[0] 
     
     
-  def getMostPopularToken(self, address):
-    with self.connection:
-      exists_query = '''
-        select exists (
-            SELECT 1
-            FROM assetvar_data.token
-            WHERE tokenAddress = %s
-        )'''
-      self.cur.execute (exists_query, (address,))
-      return self.cur.fetchone()[0] 
+  # def getMostPopularToken(self, address):
+  #   with self.connection:
+  #     exists_query = '''
+  #       select exists (
+  #           SELECT 1
+  #           FROM assetvar_data.token
+  #           WHERE tokenAddress = %s
+  #       )'''
+  #     self.cur.execute (exists_query, (address,))
+  #     return self.cur.fetchone()[0] 
     
   def getActivePairs(self, idsOnly=True):
     with self.connection:
@@ -112,7 +115,24 @@ class StoreTimescaledb:
       
     self.connection.commit()
     
+  def getPairPrices(self, pair):
+    with self.connection:
+      self.cur.execute("SELECT currentTime, pairAddress, priceStableCoin, priceUsdt, targetToken, stableCoin FROM assetvar_data.pair_price WHERE pairAddress = %s;", (pair.address,))
+      return [PairPrice(currentTime=item[0], pairAddress=item[1], priceStableCoin=item[2], priceUsdt=item[3], targetToken=item[4], stableCoin=item[5] ) for item in self.cur.fetchall()] 
+          
   def markUnactive(self, pair):
     with self.connection:
       self.cur.execute("UPDATE assetvar_data.pair SET active=FALSE WHERE address = '%s';" % (str(pair.address)) )
     self.connection.commit()
+    
+  def getTokenByAddress(self, address):
+    with self.connection:
+      query = '''
+            SELECT tokenAddress, name, symbol, decimals, startTime, endTime, atBlockNr, atBlockHash, transactionIndex, transactionHash, totalSupply, active, lastUpdated
+            FROM assetvar_data.token
+            WHERE tokenAddress = %s;
+      '''
+      self.cur.execute (query, (address,))
+      returnData = self.cur.fetchone()
+      if returnData:
+        return Token(tokenAddress=returnData[0], name=returnData[1], symbol=returnData[2], decimals=returnData[3], startTime=returnData[4], endTime=returnData[5], atBlockNr=returnData[6], atBlockHash=returnData[7], transactionIndex=returnData[8], transactionHash=returnData[9], totalSupply=returnData[10], active=returnData[11], lastUpdated=returnData[12])
