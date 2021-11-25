@@ -136,3 +136,16 @@ class StoreTimescaledb:
       returnData = self.cur.fetchone()
       if returnData:
         return Token(tokenAddress=returnData[0], name=returnData[1], symbol=returnData[2], decimals=returnData[3], startTime=returnData[4], endTime=returnData[5], atBlockNr=returnData[6], atBlockHash=returnData[7], transactionIndex=returnData[8], transactionHash=returnData[9], totalSupply=returnData[10], active=returnData[11], lastUpdated=returnData[12])
+  
+  
+  def getPairByAddress(self, address):
+    with self.connection:
+      query = '''
+            SELECT token0Address, token1Address, address, startTime, endTime, atBlockNr, atBlockHash, transactionIndex, transactionHash, active
+            FROM assetvar_data.pair
+            WHERE address = %s;
+      '''
+      self.cur.execute (query, (address,))
+      returnData = self.cur.fetchone()
+      if returnData:
+        return Pair(token0=returnData[0], token1=returnData[1], address=returnData[2], startTime=returnData[3], endTime=returnData[4], atBlockNr=returnData[5], atBlockHash=returnData[6], transactionIndex=returnData[7], transactionHash=returnData[8], active=returnData[9])
