@@ -2,15 +2,16 @@ import asyncio
 import json
 import os
 import time
+from typing import final
 import warnings
 from datetime import datetime
 
 import requests
 from web3 import Web3
 
-from models.Pair import Pair
-from models.Token import Token
-from modules.stores.StoreTimescaledb import StoreTimescaledb as Store
+from panalyze.models.Pair import Pair
+from panalyze.models.Token import Token
+from panalyze.modules.stores.StoreTimescaledb import StoreTimescaledb as Store
 
 #source: https://paohuee.medium.com/interact-binance-smart-chain-using-python-4f8d745fe7b7
 
@@ -18,7 +19,7 @@ warnings.filterwarnings("ignore", message="divide by zero encountered in divide"
 warnings.filterwarnings('ignore', '.*The event signature did not match the provided ABI.*', )
 
 web3 = Web3(Web3.HTTPProvider("https://bsc-dataseed.binance.org/"))
-print(web3.isConnected())
+# print(web3.isConnected())
         
 
 
@@ -116,7 +117,10 @@ class FetchPairCreate:
 
     
     async def fetchPairUpdates(self):
-        while True:
+        while True: # TODO: can be nicer
+            currentTime = datetime.now()
+            print("%s> Fetching pairs updates"%currentTime)
+            t0 = time.process_time()
             try:
                 contract = web3.eth.contract(address=self.PANCAKESWAP_FACTORY_ADDRESS, abi=self.pancakeswapFactoryAbi)
                 paircreated_Event = contract.events.PairCreated() # Modification
@@ -132,11 +136,13 @@ class FetchPairCreate:
                         self.store.storePair(pair)
                     # printDetails(result[0]['args'].token0, pair_abi)
             
-                while True:
+                while True: # TODO: can be nicer
+                    t1 = time.process_time()
                     try:
                         for event in block_filter.get_new_entries():
                             await handle_event(event)
-                        await asyncio.sleep(1)
+                        if time.process_time() - t1 < 1:
+                            await asyncio.sleep(1)
                     except Exception as err:
                         timeString = datetime.now().strftime("%H:%M:%S") 
                         print(f"{timeString}: Exception in inner fetchPairUpdates: {err}")
@@ -145,12 +151,21 @@ class FetchPairCreate:
                         contract = web3.eth.contract(address=self.PANCAKESWAP_FACTORY_ADDRESS, abi=self.pancakeswapFactoryAbi)
                         paircreated_Event = contract.events.PairCreated() # Modification
                         block_filter = web3.eth.filter({'fromBlock':'latest', 'address': self.PANCAKESWAP_FACTORY_ADDRESS})        
-                        pass  
+                        pass
+                    elapsed_time = time.process_time() - t1
+                    print("\tFetching pairs on event took: %s seconds"%elapsed_time)
+                    if elapsed_time < 1:
+                        sleepTime = 5
+                        print("\tSleeping for %i seconds...\n"%sleepTime)
+                        await asyncio.sleep(sleepTime)
+                          
             except Exception as err:
                 timeString = datetime.now().strftime("%H:%M:%S") 
                 print(f"{timeString}: Exception in outer fetchPairUpdates: {err}")
                 pass  
-            time.sleep(6)
+            
+            if time.process_time() - t0 < 5:
+                await asyncio.sleep(5)
 
 async def main():
     fetchPairCreate = FetchPairCreate(os.environ.get('APITOKEN'))

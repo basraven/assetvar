@@ -8,9 +8,10 @@ from datetime import datetime
 import requests
 from web3 import Web3
 from web3.exceptions import ContractLogicError
-from models.PairPrice import PairPrice
-from models.Token import Token
-from modules.stores.StoreTimescaledb import StoreTimescaledb as Store
+
+from panalyze.models.PairPrice import PairPrice
+from panalyze.models.Token import Token
+from panalyze.modules.stores.StoreTimescaledb import StoreTimescaledb as Store
 
 # Source: https://paohuee.medium.com/interact-binance-smart-chain-using-python-4f8d745fe7b7
 # Source: https://gist.github.com/Linch1/ede03999f483f2b1d5fcac9e8b312f2c
@@ -102,8 +103,11 @@ class FetchPairTicker:
     async def fetchPairTicks(self):
         
         async def fetchTick(pair, currentTime):
+            # dt = "0x1749b7ff7eDD02a51f9D7075eC5875a106CF05B5"
             try:
-                
+                # if pair.address == dt:
+                #     t1 = time.process_time()
+                    
                 if pair.token0 in Token.STABLE_COINS.values():
                     targetToken = pair.token1
                     stableCoin = pair.token0
@@ -116,16 +120,21 @@ class FetchPairTicker:
                     self.store.markUnactive(pair)
                     return
                 
+                # if pair.address == dt:
+                #     tn1 = time.process_time()
+                #     print("tn1: %s seconds"%(tn1 - t1))
+                
                 # TODO: Write to db instead of get at runtime
                 if targetToken not in self.targetTokenDecimals:
                     # print("Added decimals details to runtime cache for: " + targetToken)
                     tokenRouter = web3.eth.contract( address=web3.toChecksumAddress(targetToken), abi=self.STANDARD_ABI )
                     self.targetTokenDecimals[targetToken] = tokenRouter.functions.decimals().call()
-                
+                    
                 # Amount of tokens we want the price for is always 1
                 tokensToSell = self.getCorrectedDecimals(1, self.targetTokenDecimals[targetToken])
 
                 router = web3.eth.contract( abi=self.pancakeswapRouterAbi, address=web3.toChecksumAddress(self.PANCAKESWAP_ROUTER_ADDRESS) )
+                
                 # Using token0 and token1 here because the order is important
                 amountOut = router.functions.getAmountsOut(int(tokensToSell), [web3.toChecksumAddress(pair.token0) , web3.toChecksumAddress(pair.token1)]).call()
                 amountOut =  web3.fromWei(number=amountOut[1], unit='ether')
@@ -145,7 +154,7 @@ class FetchPairTicker:
                     priceUsdt = (priceStableCoin * self.stableCoinPrices[stableCoinName])
                     
                                 
-                # print("BNB Price: " + str(priceStablecoin) + " in USDT: " + str(priceUsdt) )
+                # print("BNB Price: " + str(priceStableCoin) + " in USDT: " + str(priceUsdt) )
                 
                 return PairPrice(currentTime=currentTime, pairAddress=pair.address, priceStableCoin=priceStableCoin, priceUsdt=priceUsdt, targetToken=targetToken, stableCoin=stableCoin)
                 
@@ -160,13 +169,13 @@ class FetchPairTicker:
 
         while True:
             currentTime = datetime.now()
-            print("Fetching pairs for ts: %s"%currentTime)
+            print("Fetching pairs ticks: %s"%currentTime)
             await self.getActivePairList()
             await self.updateStableCoinsToUSDTPrice()
-            t = time.process_time()
+            t0 = time.process_time()
 
-            self.store.storePairPriceList( await asyncio.gather(*[fetchTick(pair=pair, currentTime=currentTime) for pair in self.activePairs]) )
-            elapsed_time = time.process_time() - t
+            self.store.storePairPriceList( await asyncio.gather(*(fetchTick(pair=pair, currentTime=currentTime) for pair in self.activePairs) ) )
+            elapsed_time = time.process_time() - t0
             print("Fetching ticks took: %s seconds"%elapsed_time)
             print("\n---")
             if elapsed_time < 5:

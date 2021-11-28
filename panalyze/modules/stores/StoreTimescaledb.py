@@ -1,9 +1,9 @@
 import psycopg2
 from psycopg2 import extras
 
-from models.Pair import Pair
-from models.PairPrice import PairPrice
-from models.Token import Token
+from panalyze.models.Pair import Pair
+from panalyze.models.PairPrice import PairPrice
+from panalyze.models.Token import Token
 
 DEFAULT_CONNECTION_STRING = "postgres://postgres:password@192.168.6.69:5432"
 class StoreTimescaledb:

@@ -8,7 +8,7 @@ data:
   run.sh: |-
     #!/bin/bash
     git clone https://github.com/basraven/assetvar.git assetvar
-    cd assetvar/backend/pancake-pairs
+    cd assetvar/panalyze
     pip3 install -r requirements.txt 2>/dev/null
     python3 FetchPairCreate.py
 
