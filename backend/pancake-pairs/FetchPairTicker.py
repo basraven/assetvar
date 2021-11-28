@@ -19,7 +19,7 @@ warnings.filterwarnings("ignore", message="divide by zero encountered in divide"
 warnings.filterwarnings("ignore", message=".*INSUFFICIENT_LIQUIDIT.*")
 
 web3 = Web3(Web3.HTTPProvider("https://bsc-dataseed.binance.org/"))
-print(web3.isConnected())
+# print(web3.isConnected())
 
 class FetchPairTicker:
 
@@ -82,7 +82,7 @@ class FetchPairTicker:
                 router = web3.eth.contract( abi=self.pancakeswapRouterAbi, address=web3.toChecksumAddress(self.PANCAKESWAP_ROUTER_ADDRESS) )
                 amountOut = router.functions.getAmountsOut(stableCoinToSell, [web3.toChecksumAddress(Token.STABLE_COINS[stableCoinName]) , web3.toChecksumAddress(Token.STABLE_COINS["USDT"])]).call()
                 self.stableCoinPrices[stableCoinName] =  web3.fromWei(number=amountOut[1], unit='ether')
-                print("%s price: %s" % (stableCoinName, str(self.stableCoinPrices[stableCoinName]) ))
+                print("\t%s price: %s" % (stableCoinName, str(self.stableCoinPrices[stableCoinName]) ))
             except Exception as err:
                 timeString = datetime.now().strftime("%H:%M:%S") 
                 print(f"{timeString}: Exception occured while updating {stableCoinName} price: {err}")
@@ -159,12 +159,18 @@ class FetchPairTicker:
 
 
         while True:
+            currentTime = datetime.now()
+            print("Fetching pairs for ts: %s"%currentTime)
             await self.getActivePairList()
             await self.updateStableCoinsToUSDTPrice()
-            currentTime = datetime.now()
+            t = time.process_time()
+
             self.store.storePairPriceList( await asyncio.gather(*[fetchTick(pair=pair, currentTime=currentTime) for pair in self.activePairs]) )
+            elapsed_time = time.process_time() - t
+            print("Fetching ticks took: %s seconds"%elapsed_time)
             print("\n---")
-            await asyncio.sleep(30)
+            if elapsed_time < 5:
+                await asyncio.sleep(30)
             
 
 async def main():
