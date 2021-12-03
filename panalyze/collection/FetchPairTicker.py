@@ -11,7 +11,7 @@ import requests
 from web3 import Web3
 from web3.exceptions import ContractLogicError
 
-import multiprocessing
+import multiprocessing as mp
 
 from panalyze.models.PairPrice import PairPrice
 from panalyze.models.Token import Token
@@ -36,7 +36,6 @@ pancakeswapFactoryAbi = ""
 pancakeswapRouterAbi = ""
 
 
-
 def getCorrectedDecimals(number, decimals ):
     number = str(number)
     numberAbs = number.split('.')[0]
@@ -53,15 +52,18 @@ def set_global_session():
     global session
     if not session:
         session = requests.Session()
-
+    
 # @asyncio.coroutine
 def fetchTick(contextObject):
     pair = contextObject['pair']
-    activePairs = contextObject['activePairs']
     targetTokenDecimals = contextObject['targetTokenDecimals']
-    lastPrice = contextObject['lastPrice']
     stableCoinPrices = contextObject['stableCoinPrices']
     currentTime = contextObject['currentTime']
+    
+    lastPrice = contextObject['lastPrice']
+    activePairs = contextObject['activePairs']
+    
+    removeFromActivePairs = []
 
     # dt = "0x1749b7ff7eDD02a51f9D7075eC5875a106CF05B5"
     try:
@@ -77,6 +79,7 @@ def fetchTick(contextObject):
         else:
             # print("Not found a stable coin\n \t pair %s \n \t token0 %s \n \t token1 %s" % (pair.address, pair.token0, pair.token1))
             activePairs.remove(pair)
+            removeFromActivePairs.append[pair]
             # self.store.markUnactive(pair)
             return
         
@@ -118,7 +121,13 @@ def fetchTick(contextObject):
                         
         # print("BNB Price: " + str(priceStableCoin) + " in USDT: " + str(priceUsdt) )
         
-        return PairPrice(currentTime=currentTime, pairAddress=pair.address, priceStableCoin=priceStableCoin, priceUsdt=priceUsdt, targetToken=targetToken, stableCoin=stableCoin)
+        return {
+                "lastPrice" : lastPrice,
+                "removeFromActivePairs" : removeFromActivePairs,
+                "pairPrice" : PairPrice(currentTime=currentTime, pairAddress=pair.address, priceStableCoin=priceStableCoin, priceUsdt=priceUsdt, targetToken=targetToken, stableCoin=stableCoin)  
+            }
+        
+         
         
     except Exception as err:
         if "PancakeLibrary: INSUFFICIENT_LIQUIDITY" in str(err):
@@ -191,34 +200,57 @@ class FetchPairTicker:
     def getContextObject(self, pair):
         return {
             "pair": pair,
-            "activePairs": self.activePairs,
             "targetTokenDecimals": self.targetTokenDecimals,
-            "lastPrice" : self.lastPrice,
             "stableCoinPrices" : self.stableCoinPrices,
-            "currentTime" : self.currentTime
+            "currentTime" : self.currentTime,
+            "activePairs" : self.activePairs,
+            "lastPrice" : self.lastPrice
         }
     
-    def fetchPairTicks(self):     
+    def fetchPairTicks(self):    
 
         while True:
-            self.currentTime = datetime.now()
-            print("Fetching pairs ticks: %s"%self.currentTime)
-            self.getActivePairList()
-            self.updateStableCoinsToUSDTPrice()
-            start_time = time.time()
-            
-            with multiprocessing.Pool(initializer=set_global_session, processes=(multiprocessing.cpu_count() * 2)) as pool:
-                PairPriceList = pool.map(fetchTick, [self.getContextObject(pair) for pair in self.activePairs] )
-              
-            # asyncio.get_event_loop().run_until_complete(asyncio.gather(*(fetchTick(self.getContextObject(pair)) for pair in self.activePairs) ))
-            
-            self.store.storePairPriceList(PairPriceList)
-            elapsed_time =  (time.time() - start_time)
-            print("Fetching ticks took: %s seconds"%elapsed_time)
-            print("\n---")
-            if elapsed_time < 5:
-                print("Sleeping...")
-                time.sleep(10)
+            try:            
+                self.currentTime = datetime.now()
+                print("Fetching pairs ticks: %s"%self.currentTime)
+                self.getActivePairList()
+                self.updateStableCoinsToUSDTPrice()
+                start_time = time.time()
+                
+                with mp.Pool(initializer=set_global_session, processes=(mp.cpu_count() * 2)) as pool:
+                    fetchTickReturnList = pool.map(fetchTick, [self.getContextObject(pair) for pair in self.activePairs] )
+                # asyncio.get_event_loop().run_until_complete(asyncio.gather(*(fetchTick(self.getContextObject(pair)) for pair in self.activePairs) ))
+                
+                pairPriceList = []
+                for item in fetchTickReturnList:
+                    if item:
+                        if "pairPrice" in item:
+                            pairPriceList.append(item["pairPrice"])
+                        if "lastPrice" in item:
+                            for lastPriceUpdateKey in item["lastPrice"]:
+                                if item["lastPrice"][lastPriceUpdateKey]:
+                                    self.lastPrice[lastPriceUpdateKey] = item["lastPrice"][lastPriceUpdateKey]
+                        if "removeFromActivePairs" in item:
+                            if len(item["removeFromActivePairs"]) > 0:
+                                for pair in item["removeFromActivePairs"]:
+                                    self.activePairs.remove(pair)
+                                    self.store.markUnactive(pair)
+                                    
+                
+                self.store.storePairPriceList(pairPriceList)              
+                
+                elapsed_time =  (time.time() - start_time)
+                print("Fetching ticks took: %s seconds"%elapsed_time)
+                print("\n---")
+                if elapsed_time < 5:
+                    print("Sleeping...")
+                    time.sleep(10)
+            except Exception as err:
+                timeString = datetime.now().strftime("%H:%M:%S") 
+                print(f"{timeString}: Exception occured: {err}")
+            finally:
+                pool.close()
+                
             
 
 def main():
