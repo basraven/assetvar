@@ -1,4 +1,5 @@
 import asyncio
+import decimal
 import json
 import os
 import time
@@ -56,14 +57,46 @@ class FetchPairCreate:
     def getPairDetails(self, contract, abi):
         contract_address = web3.toChecksumAddress(contract)
         contract = web3.eth.contract(address=contract_address, abi=abi)
-        totalSupply = contract.functions.totalSupply().call()
-        contractName = contract.functions.name().call()
-        contractSymbol = contract.functions.symbol().call()
+        
+        contractName = ""
+        totalSupply = 0
+        contractSymbol = ""
+        contractDecimals = 0
+        
+        try:
+            contractName = contract.functions.name().call()    
+        except Exception as err:
+            timeString = datetime.now().strftime("%H:%M:%S") 
+            print(f"{timeString}: Exception in name(): {err}")
+            pass  
+        
+        try:
+            contractSymbol = contract.functions.symbol().call()    
+        except Exception as err:
+            timeString = datetime.now().strftime("%H:%M:%S") 
+            print(f"{timeString}: Exception in symbol(): {err}")
+            pass  
+        
+        try:
+            totalSupply = contract.functions.totalSupply().call()    
+        except Exception as err:
+            timeString = datetime.now().strftime("%H:%M:%S") 
+            print(f"{timeString}: Exception in totalSupply(): {err}")
+            pass  
+        
+        try:
+            contractDecimals = contract.functions.decimals().call() 
+        except Exception as err:
+            timeString = datetime.now().strftime("%H:%M:%S") 
+            print(f"{timeString}: Exception in decimals(): {err}")
+            pass  
+        
         # print("\nFor Contract:", contract_address)
         # print("\tTotal Supply:", totalSupply)
         # print("\tContract Name:", contractName)
         # print("\tContract Symbol:", contractSymbol)
-        return [totalSupply , contractName, contractSymbol]
+        print("\tContract Decimals:", contractDecimals)
+        return [totalSupply , contractName, contractSymbol, contractDecimals]
 
     # async def fetchPairUpdate(self):
         # address = "0x6897CBB72834A1586154EE6b68a114cc5311f2B6"
@@ -73,11 +106,12 @@ class FetchPairCreate:
         startTime = datetime.now()
         
         token0Address = event["args"]["token0"]
-        [totalSupply , contractName, contractSymbol] = self.getPairDetails(token0Address, await self.getAbi(token0Address) or self.STANDARD_ABI)
+        [totalSupply , contractName, contractSymbol, contractDecimals] = self.getPairDetails(token0Address, await self.getAbi(token0Address) or self.STANDARD_ABI)
         token0 = Token(
             tokenAddress = token0Address,
             name = contractName,
             symbol = contractSymbol,
+            decimals = contractDecimals,
             startTime = startTime,
             atBlockNr = event["blockNumber"],
             atBlockHash = event["blockHash"],
@@ -88,11 +122,12 @@ class FetchPairCreate:
         )
         
         token1Address = event["args"]["token1"]
-        [totalSupply , contractName, contractSymbol] = self.getPairDetails(token1Address, await self.getAbi(token1Address) or self.STANDARD_ABI)
+        [totalSupply , contractName, contractSymbol, contractDecimals] = self.getPairDetails(token1Address, await self.getAbi(token1Address) or self.STANDARD_ABI)
         token1 = Token(
             tokenAddress = token1Address,
             name = contractName,
             symbol = contractSymbol,
+            decimals = contractDecimals,
             startTime = startTime,
             atBlockNr = event["blockNumber"],
             atBlockHash = event["blockHash"],
@@ -122,11 +157,6 @@ class FetchPairCreate:
             print("%s> Fetching pairs updates"%currentTime)
             t0 = time.process_time()
             try:
-                contract = web3.eth.contract(address=self.PANCAKESWAP_FACTORY_ADDRESS, abi=self.pancakeswapFactoryAbi)
-                paircreated_Event = contract.events.PairCreated() # Modification
-                block_filter = web3.eth.filter({'fromBlock':'latest', 'address': self.PANCAKESWAP_FACTORY_ADDRESS})
-                # log_loop(block_filter, 2)
-                
                 async def handle_event(event):
                     receipt = web3.eth.waitForTransactionReceipt(event['transactionHash'])
                     result = paircreated_Event.processReceipt(receipt) # Modification
@@ -137,6 +167,10 @@ class FetchPairCreate:
                     # printDetails(result[0]['args'].token0, pair_abi)
             
                 while True: # TODO: can be nicer
+                    contract = web3.eth.contract(address=self.PANCAKESWAP_FACTORY_ADDRESS, abi=self.pancakeswapFactoryAbi)
+                    paircreated_Event = contract.events.PairCreated() # Modification
+                    block_filter = web3.eth.filter({'fromBlock':'latest', 'address': self.PANCAKESWAP_FACTORY_ADDRESS})        
+                    
                     t1 = time.process_time()
                     try:
                         for event in block_filter.get_new_entries():
@@ -146,11 +180,7 @@ class FetchPairCreate:
                     except Exception as err:
                         timeString = datetime.now().strftime("%H:%M:%S") 
                         print(f"{timeString}: Exception in inner fetchPairUpdates: {err}")
-                        
                         # TODO: Relocate to function
-                        contract = web3.eth.contract(address=self.PANCAKESWAP_FACTORY_ADDRESS, abi=self.pancakeswapFactoryAbi)
-                        paircreated_Event = contract.events.PairCreated() # Modification
-                        block_filter = web3.eth.filter({'fromBlock':'latest', 'address': self.PANCAKESWAP_FACTORY_ADDRESS})        
                         pass
                     elapsed_time = time.process_time() - t1
                     print("\tFetching pairs on event took: %s seconds"%elapsed_time)

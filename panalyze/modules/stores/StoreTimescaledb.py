@@ -5,7 +5,7 @@ from panalyze.models.Pair import Pair
 from panalyze.models.PairPrice import PairPrice
 from panalyze.models.Token import Token
 
-DEFAULT_CONNECTION_STRING = "postgres://postgres:password@192.168.6.69:5432"
+DEFAULT_CONNECTION_STRING = "postgres://postgres:password@localhost:5432"
 class StoreTimescaledb:
 
   def __init__(self):
@@ -56,7 +56,7 @@ class StoreTimescaledb:
   def getActivePairs(self, idsOnly=True):
     with self.connection:
       if idsOnly:
-        self.cur.execute("SELECT address, token0Address, token1Address FROM assetvar_data.pair WHERE active = true;")
+        self.cur.execute("SELECT address, token0Address, token1Address FROM assetvar_data.pair WHERE active = true limit 5000;")
       else:
         self.cur.execute("SELECT * FROM assetvar_data.pair WHERE active = true;")
       return [Pair(address=item[0], token0=item[1], token1=item[2], active=True ) for item in self.cur.fetchall()] 
@@ -66,11 +66,12 @@ class StoreTimescaledb:
   def storeToken(self, token):
     if not self.checkTokenExists(token.tokenAddress):
       with self.connection:
-        self.cur.execute("INSERT INTO assetvar_data.token(tokenAddress, name, symbol, startTime, endTime, atBlockNr, atBlockHash, transactionIndex, transactionHash, totalSupply, active ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s);",
+        self.cur.execute("INSERT INTO assetvar_data.token(tokenAddress, name, symbol, decimals, startTime, endTime, atBlockNr, atBlockHash, transactionIndex, transactionHash, totalSupply, active ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s);",
           (
             token.tokenAddress,
             token.name,
             token.symbol,
+            token.decimals,
             token.startTime,
             token.endTime,
             token.atBlockNr,
