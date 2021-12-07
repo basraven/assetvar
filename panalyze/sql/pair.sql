@@ -9,7 +9,6 @@ CREATE TABLE assetvar_data.pair (
   atBlockHash         VARCHAR(128)      NOT NULL,
   transactionIndex    DECIMAL           NOT NULL,
   transactionHash     VARCHAR(128)      NOT NULL,
-  active              boolean           DEFAULT true,
   lastUpdated         TIMESTAMP       DEFAULT NOW(),
   PRIMARY KEY (address)
 );

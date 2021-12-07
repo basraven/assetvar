@@ -19,10 +19,9 @@ class Token:
     transactionIndex = None
     transactionHash = None
     totalSupply = None
-    active = None
     lastUpdated = None 
     
-    def __init__(self, tokenAddress = None, name = None, symbol = None, decimals = None, startTime = None, endTime = None, atBlockNr = None, atBlockHash = None, transactionIndex = None, transactionHash = None, totalSupply = None, active = None, lastUpdated = None):
+    def __init__(self, tokenAddress = None, name = None, symbol = None, decimals = None, startTime = None, endTime = None, atBlockNr = None, atBlockHash = None, transactionIndex = None, transactionHash = None, totalSupply = None, lastUpdated = None):
         self.tokenAddress = tokenAddress
         self.name = name
         self.symbol = symbol
@@ -34,5 +33,4 @@ class Token:
         self.transactionIndex = transactionIndex
         self.transactionHash = transactionHash
         self.totalSupply = totalSupply
-        self.active = active
         self.lastUpdated = lastUpdated

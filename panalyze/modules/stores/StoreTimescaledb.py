@@ -56,17 +56,17 @@ class StoreTimescaledb:
   def getActivePairs(self, idsOnly=True):
     with self.connection:
       if idsOnly:
-        self.cur.execute("SELECT address, token0Address, token1Address FROM assetvar_data.pair WHERE active = true limit 5000;")
+        self.cur.execute("SELECT address, token0Address, token1Address FROM assetvar_data.view_active_pair;")
       else:
-        self.cur.execute("SELECT * FROM assetvar_data.pair WHERE active = true;")
-      return [Pair(address=item[0], token0=item[1], token1=item[2], active=True ) for item in self.cur.fetchall()] 
+        self.cur.execute("SELECT * FROM assetvar_data.view_active_pair ;")
+      return [Pair(address=item[0], token0=item[1], token1=item[2] ) for item in self.cur.fetchall()] 
     
     
 
   def storeToken(self, token):
     if not self.checkTokenExists(token.tokenAddress):
       with self.connection:
-        self.cur.execute("INSERT INTO assetvar_data.token(tokenAddress, name, symbol, decimals, startTime, endTime, atBlockNr, atBlockHash, transactionIndex, transactionHash, totalSupply, active ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s);",
+        self.cur.execute("INSERT INTO assetvar_data.token(tokenAddress, name, symbol, decimals, startTime, endTime, atBlockNr, atBlockHash, transactionIndex, transactionHash, totalSupply ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s);",
           (
             token.tokenAddress,
             token.name,
@@ -78,8 +78,7 @@ class StoreTimescaledb:
             token.atBlockHash.hex(),
             token.transactionIndex,
             token.transactionHash.hex(),
-            token.totalSupply,
-            token.active
+            token.totalSupply
           )
         )
         self.connection.commit()
@@ -121,32 +120,39 @@ class StoreTimescaledb:
       self.cur.execute("SELECT currentTime, pairAddress, priceStableCoin, priceUsdt, targetToken, stableCoin FROM assetvar_data.pair_price WHERE pairAddress = %s;", (pair.address,))
       return [PairPrice(currentTime=item[0], pairAddress=item[1], priceStableCoin=item[2], priceUsdt=item[3], targetToken=item[4], stableCoin=item[5] ) for item in self.cur.fetchall()] 
           
-  def markUnactive(self, pair):
+  def markUnactive(self, pair, reason):
     with self.connection:
-      self.cur.execute("UPDATE assetvar_data.pair SET active=FALSE WHERE address = '%s';" % (str(pair.address)) )
+      self.cur.execute("INSERT INTO assetvar_data.filter_token_active(tokenAddress, toFilter, failedAttempts, reason) VALUES (%s, %s, %s, %s) ON CONFLICT DO UPDATE SET failedAttempts = failedAttempts + 1;",
+          (
+            pair.address,
+            True,
+            1,
+            reason,
+          )
+        )
     self.connection.commit()
     
   def getTokenByAddress(self, address):
     with self.connection:
       query = '''
-            SELECT tokenAddress, name, symbol, decimals, startTime, endTime, atBlockNr, atBlockHash, transactionIndex, transactionHash, totalSupply, active, lastUpdated
+            SELECT tokenAddress, name, symbol, decimals, startTime, endTime, atBlockNr, atBlockHash, transactionIndex, transactionHash, totalSupply, lastUpdated
             FROM assetvar_data.token
             WHERE tokenAddress = %s;
       '''
       self.cur.execute (query, (address,))
       returnData = self.cur.fetchone()
       if returnData:
-        return Token(tokenAddress=returnData[0], name=returnData[1], symbol=returnData[2], decimals=returnData[3], startTime=returnData[4], endTime=returnData[5], atBlockNr=returnData[6], atBlockHash=returnData[7], transactionIndex=returnData[8], transactionHash=returnData[9], totalSupply=returnData[10], active=returnData[11], lastUpdated=returnData[12])
+        return Token(tokenAddress=returnData[0], name=returnData[1], symbol=returnData[2], decimals=returnData[3], startTime=returnData[4], endTime=returnData[5], atBlockNr=returnData[6], atBlockHash=returnData[7], transactionIndex=returnData[8], transactionHash=returnData[9], totalSupply=returnData[10], lastUpdated=returnData[11])
   
   
   def getPairByAddress(self, address):
     with self.connection:
       query = '''
-            SELECT token0Address, token1Address, address, startTime, endTime, atBlockNr, atBlockHash, transactionIndex, transactionHash, active
+            SELECT token0Address, token1Address, address, startTime, endTime, atBlockNr, atBlockHash, transactionIndex, transactionHash
             FROM assetvar_data.pair
             WHERE address = %s;
       '''
       self.cur.execute (query, (address,))
       returnData = self.cur.fetchone()
       if returnData:
-        return Pair(token0=returnData[0], token1=returnData[1], address=returnData[2], startTime=returnData[3], endTime=returnData[4], atBlockNr=returnData[5], atBlockHash=returnData[6], transactionIndex=returnData[7], transactionHash=returnData[8], active=returnData[9])
+        return Pair(token0=returnData[0], token1=returnData[1], address=returnData[2], startTime=returnData[3], endTime=returnData[4], atBlockNr=returnData[5], atBlockHash=returnData[6], transactionIndex=returnData[7], transactionHash=returnData[8])

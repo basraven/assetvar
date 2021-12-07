@@ -79,7 +79,7 @@ def fetchTick(contextObject):
         else:
             # print("Not found a stable coin\n \t pair %s \n \t token0 %s \n \t token1 %s" % (pair.address, pair.token0, pair.token1))
             activePairs.remove(pair)
-            removeFromActivePairs.append[pair]
+            removeFromActivePairs.append[{"reason" : 2, "pair" : pair}]
             # self.store.markUnactive(pair)
             return
         
@@ -211,7 +211,7 @@ class FetchPairTicker:
 
         while True:
             try:            
-                self.currentTime = datetime.now()
+                self.currentTime = datetime.now().strftime("%H:%M:%S") 
                 print("Fetching pairs ticks: %s"%self.currentTime)
                 self.getActivePairList()
                 self.updateStableCoinsToUSDTPrice()
@@ -232,9 +232,9 @@ class FetchPairTicker:
                                     self.lastPrice[lastPriceUpdateKey] = item["lastPrice"][lastPriceUpdateKey]
                         if "removeFromActivePairs" in item:
                             if len(item["removeFromActivePairs"]) > 0:
-                                for pair in item["removeFromActivePairs"]:
-                                    self.activePairs.remove(pair)
-                                    self.store.markUnactive(pair)
+                                for removeObject in item["removeFromActivePairs"]:
+                                    self.activePairs.remove(removeObject["pair"])
+                                    self.store.markUnactive(removeObject["pair"], removeObject["reason"])
                                     
                 
                 self.store.storePairPriceList(pairPriceList)              

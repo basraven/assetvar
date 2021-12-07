@@ -40,10 +40,10 @@ class FetchPairCreate:
         self.store.connect()
         return None
 
-    async def fetchPancakeSwapAbi(self):
-        self.pancakeswapFactoryAbi = await self.getAbi(self.PANCAKESWAP_FACTORY_ADDRESS)
+    def fetchPancakeSwapAbi(self):
+        self.pancakeswapFactoryAbi = self.getAbi(self.PANCAKESWAP_FACTORY_ADDRESS)
         
-    async def getAbi(self, address):
+    def getAbi(self, address):
         contract_address = web3.toChecksumAddress(address)
         apiCall = self.BSCSCAN_API+"?module=contract&action=getabi&address="+str(contract_address)
         apiCall += "&apikey="
@@ -95,18 +95,18 @@ class FetchPairCreate:
         # print("\tTotal Supply:", totalSupply)
         # print("\tContract Name:", contractName)
         # print("\tContract Symbol:", contractSymbol)
-        print("\tContract Decimals:", contractDecimals)
+        # print("\tContract Decimals:", contractDecimals)
         return [totalSupply , contractName, contractSymbol, contractDecimals]
 
     # async def fetchPairUpdate(self):
         # address = "0x6897CBB72834A1586154EE6b68a114cc5311f2B6"
-        # self.getPairDetails(address, await self.getAbi(address))
+        # self.getPairDetails(address, self.getAbi(address))
     
-    async def getPairFromEvent(self, event):
+    def getPairFromEvent(self, event):
         startTime = datetime.now()
         
         token0Address = event["args"]["token0"]
-        [totalSupply , contractName, contractSymbol, contractDecimals] = self.getPairDetails(token0Address, await self.getAbi(token0Address) or self.STANDARD_ABI)
+        [totalSupply , contractName, contractSymbol, contractDecimals] = self.getPairDetails(token0Address, self.getAbi(token0Address) or self.STANDARD_ABI)
         token0 = Token(
             tokenAddress = token0Address,
             name = contractName,
@@ -118,11 +118,10 @@ class FetchPairCreate:
             transactionIndex = event["transactionIndex"],
             transactionHash = event["transactionHash"],
             totalSupply = totalSupply,
-            active = True
         )
         
         token1Address = event["args"]["token1"]
-        [totalSupply , contractName, contractSymbol, contractDecimals] = self.getPairDetails(token1Address, await self.getAbi(token1Address) or self.STANDARD_ABI)
+        [totalSupply , contractName, contractSymbol, contractDecimals] = self.getPairDetails(token1Address, self.getAbi(token1Address) or self.STANDARD_ABI)
         token1 = Token(
             tokenAddress = token1Address,
             name = contractName,
@@ -134,7 +133,6 @@ class FetchPairCreate:
             transactionIndex = event["transactionIndex"],
             transactionHash = event["transactionHash"],
             totalSupply = totalSupply,
-            active = True
         )
         
         pair = Pair(
@@ -150,63 +148,82 @@ class FetchPairCreate:
         return pair
 
 
+    # asynchronous defined function to loop
+    # this loop sets up an event filter and is looking for new entries for the "PairCreated" event
+    # this loop runs on a poll interval to give room for the "handle"
+    async def log_loop(self, event_definition, poll_interval):
+        loop = asyncio.get_event_loop()
+        event_filter = event_definition().createFilter(fromBlock='latest')
+                    
+        while True:
+            try:
+                for PairCreated in event_filter.get_new_entries():
+                    loop.create_task(self.handle_event(event_definition, PairCreated))
+            except Exception as err:
+                timeString = datetime.now().strftime("%H:%M:%S") 
+                print(f"\t{timeString}: Exception in log_loop: {err}")
+                event_filter = event_definition().createFilter(fromBlock='latest')
+                pass  
+            await asyncio.sleep(poll_interval)
     
-    async def fetchPairUpdates(self):
-        while True: # TODO: can be nicer
-            currentTime = datetime.now()
-            print("%s> Fetching pairs updates"%currentTime)
+     # TODO: handle async
+    async def handle_event(self, event_definition, event):
+        receipt = web3.eth.waitForTransactionReceipt(event['transactionHash'])
+        result = event_definition().processReceipt(receipt) # Modification
+        
+        for resultItem in result:
+            pair = self.getPairFromEvent(resultItem)
+            timeString = datetime.now().strftime("%H:%M:%S") 
+            print(f"\t{timeString}: Adding {str(pair.address)}")
+            self.store.storePair(pair)
+        # printDetails(result[0]['args'].token0, pair_abi)
+
+    
+    def fetchNewPairs(self):
+        # while True: # TODO: can be nicer
+        if True:
+            currentTime = datetime.now().strftime("%H:%M:%S") 
+            print("%s: Fetching new pairs"%currentTime)
             t0 = time.process_time()
             try:
-                async def handle_event(event):
-                    receipt = web3.eth.waitForTransactionReceipt(event['transactionHash'])
-                    result = paircreated_Event.processReceipt(receipt) # Modification
-                    
-                    for resultItem in result:
-                        pair = await self.getPairFromEvent(resultItem)
-                        self.store.storePair(pair)
-                    # printDetails(result[0]['args'].token0, pair_abi)
+                
+               
             
                 while True: # TODO: can be nicer
+                # if True:
                     contract = web3.eth.contract(address=self.PANCAKESWAP_FACTORY_ADDRESS, abi=self.pancakeswapFactoryAbi)
-                    paircreated_Event = contract.events.PairCreated() # Modification
-                    block_filter = web3.eth.filter({'fromBlock':'latest', 'address': self.PANCAKESWAP_FACTORY_ADDRESS})        
+                    paircreated_definition = contract.events.PairCreated # Modification
+                    # block_filter = web3.eth.filter({'fromBlock':'latest', 'address': self.PANCAKESWAP_FACTORY_ADDRESS})        
                     
-                    t1 = time.process_time()
+                    loop = asyncio.get_event_loop()
                     try:
-                        for event in block_filter.get_new_entries():
-                            await handle_event(event)
-                        if time.process_time() - t1 < 1:
-                            await asyncio.sleep(1)
-                    except Exception as err:
-                        timeString = datetime.now().strftime("%H:%M:%S") 
-                        print(f"{timeString}: Exception in inner fetchPairUpdates: {err}")
-                        # TODO: Relocate to function
-                        pass
-                    elapsed_time = time.process_time() - t1
-                    print("\tFetching pairs on event took: %s seconds"%elapsed_time)
-                    if elapsed_time < 1:
-                        sleepTime = 5
-                        print("\tSleeping for %i seconds...\n"%sleepTime)
-                        await asyncio.sleep(sleepTime)
-                          
+                        loop.run_until_complete(
+                            asyncio.gather(
+                                self.log_loop(paircreated_definition, 2)))
+                                # log_loop(block_filter, 2),
+                                # log_loop(tx_filter, 2)))
+                    finally:
+                        # close loop to free up system resources
+                        loop.close()
+                                              
             except Exception as err:
                 timeString = datetime.now().strftime("%H:%M:%S") 
                 print(f"{timeString}: Exception in outer fetchPairUpdates: {err}")
                 pass  
             
             if time.process_time() - t0 < 5:
-                await asyncio.sleep(5)
+                time.sleep(5)
 
-async def main():
+def main():
     fetchPairCreate = FetchPairCreate(os.environ.get('APITOKEN'))
-    await fetchPairCreate.fetchPancakeSwapAbi()
-    await fetchPairCreate.fetchPairUpdates()
+    fetchPairCreate.fetchPancakeSwapAbi()
+    fetchPairCreate.fetchNewPairs()
 
 if __name__ == "__main__":
     import time
     s = time.perf_counter()
     try:
-        asyncio.run(main())
+        main()
     except asyncio.CancelledError:
         pass
     

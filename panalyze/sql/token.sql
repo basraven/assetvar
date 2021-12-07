@@ -11,7 +11,6 @@ CREATE TABLE assetvar_data.token (
   transactionIndex    DECIMAL           NOT NULL,
   transactionHash     VARCHAR(128)      NOT NULL,
   totalSupply         DECIMAL           NOT NULL,
-  active              boolean           DEFAULT true,
   lastUpdated         TIMESTAMP       DEFAULT NOW(),
   PRIMARY KEY (tokenAddress)
 );
