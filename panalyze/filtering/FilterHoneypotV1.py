@@ -53,27 +53,30 @@ def set_global_session():
     if not session:
         session = requests.Session()
     
-def filterHoneypot(contextObject):
-    tokenAddress = contextObject['tokenAddress']
+def filterPairOnHoneypot(contextObject):
+    pair = contextObject['pair']
     currentTime = contextObject['currentTime']
     # targetTokenDecimals = contextObject['targetTokenDecimals']
     # stableCoinPrices = contextObject['stableCoinPrices']
     
-    targetContract = web3.eth.contract( address=web3.toChecksumAddress(tokenAddress), abi=STANDARD_ABI )
-    # encodedAddress = targetContract.functions.address.encode(tokenAddress)
-    # print(web3.eth.codec.encode_single('address', tokenAddress).decode("utf-8") )
+    targetToken = ""
+    targetTokenType = ""
+    if pair.token0 == Token.STABLE_COINS["BNB"]:
+        targetToken = pair.token1
+        targetTokenType = "BNB"
+    elif pair.token1 == Token.STABLE_COINS["BNB"]:
+        targetToken = pair.token0
+        targetTokenType = "BNB"
+    else:
+        # Currently only BNB is supported
+        return
     
-    # print(web3.toChecksumAddress(targetContract.address))
-    # encodedAddress = targetContract.encodeABI(fn_name="encodeParameter", args=[tokenAddress])
-    
-    
-    print("targetContract") 
-    # encodedAddress = web3.eth.abi.encodeParameter('address', tokenAddress); # output: 0x000000000000000000000000e91a8d2c584ca93c7405f15c22cdfe53c29896e3
-    # contractFuncData = '0xd66383cb' # output: 0xd66383cb000000000000000000000000e91a8d2c584ca93c7405f15c22cdfe53c29896e3
-    # let callData = contractFuncData+encodedAddress.substring(2);
-    callData = "0xd66383cb000000000000000000000000" + tokenAddress[2:]
-    val = 100000000000000000
+    targetContract = web3.eth.contract( address=web3.toChecksumAddress(targetToken), abi=STANDARD_ABI )
 
+    callData = "0xd66383cb000000000000000000000000" + targetToken[2:]
+    val = 100000000000000000 # FIXME: should be something different
+
+    # TODO: Use await from create function
     try:
         callResponse = web3.eth.call({
             "to": web3.toChecksumAddress('0x2bf75fd2fab5fc635a4c6073864c708dfc8396fc'), # for BNB
@@ -290,12 +293,12 @@ class FilterHoneypotV1:
     
     BSCSCAN_API = "https://api.bscscan.com/api"
     
-    # activePairs = {}
+    activeMinAgedPairs = {}
 
     def __init__(self, apikey):
         self.apiKey = apikey
-        # self.store = Store()
-        # self.store.connect()
+        self.store = Store()
+        self.store.connect()
         return None
 
     def fetchPancakeSwapAbi(self):
@@ -331,22 +334,21 @@ class FilterHoneypotV1:
     #             pass
         
 
-    # def getActivePairList(self):        
-    #     # TODO: delta logic
-    #     try:
-    #         self.activePairs = self.store.getActivePairs(idsOnly=True) #[-2:-1] # 0xd1fe404c759bedddbfb5dcdc1ccefa401a2cd5ea
-    #     except Exception as err:
-    #         timeString = datetime.now().strftime("%H:%M:%S") 
-    #         print(f"{timeString}: Exception occured while getting active pairs: {err}")
-    #         pass
+    def getActiveMinAgedPairList(self, minAge):        
+        try:
+            self.activeMinAgedPairs = self.store.getActivePairsMinAge(minAge, idsOnly=True)
+        except Exception as err:
+            timeString = datetime.now().strftime("%H:%M:%S") 
+            print(f"{timeString}: Exception occured while getting active tokens: {err}")
+            pass
         
-    def getContextObject(self, tokenAddress):
+    def getContextObject(self, pair):
         return {
-            "tokenAddress": tokenAddress,
+            "pair": pair,
             "currentTime" : self.currentTime,
             # "targetTokenDecimals": self.targetTokenDecimals,
             # "stableCoinPrices" : self.stableCoinPrices,
-            # "activePairs" : self.activePairs,
+            # "activePairs" : self.activeMinAgedPairs,
             # "lastPrice" : self.lastPrice
         }
     
@@ -356,22 +358,24 @@ class FilterHoneypotV1:
             try:            
                 self.currentTime = datetime.now()
                 print("Filtering on Honeypot V1: %s"%self.currentTime)
-                # self.updateStableCoinsToUSDTPrice()
                 start_time = time.time()
+                minAge = '6 hours' # postgress interval value
+                self.getActiveMinAgedPairList(minAge)
                 
-                toCheckTokenAddresses = [
-                    # "0xe91a8d2c584ca93c7405f15c22cdfe53c29896e3",     # BNB: DEXT, no honeypot
-                    # "0xab43c532cd3293e26898fd5c03f0507c1f915f0b" ,    # BNB: ADANX, no honeypot but with taxes
-                    "0x8076c74c5e3f5852037f31ff0093eeb8c8add8d3" ,    # BNB: Safemoon, no honeypot but with taxes
-                    # "0x2014a3d523f1ac53f89590e987e7bd611424d5b8",     # BNB: XIDR, honeypot,
-                    # "0xc2931310a338a227bfb73b3132a90f107e7c5276",     # BNB: wrong address, 
-                    # "0xfd9faca15558eb243ac0012cf7acfbf480574668",     # BUSD: MVR, no honeypot, but low transactions 
-                ]
+                
+                # toCheckTokenAddresses = [
+                #     # "0xe91a8d2c584ca93c7405f15c22cdfe53c29896e3",     # BNB: DEXT, no honeypot
+                #     # "0xab43c532cd3293e26898fd5c03f0507c1f915f0b" ,    # BNB: ADANX, no honeypot but with taxes
+                #     "0x8076c74c5e3f5852037f31ff0093eeb8c8add8d3" ,    # BNB: Safemoon, no honeypot but with taxes
+                #     # "0x2014a3d523f1ac53f89590e987e7bd611424d5b8",     # BNB: XIDR, honeypot,
+                #     # "0xc2931310a338a227bfb73b3132a90f107e7c5276",     # BNB: wrong address, 
+                #     # "0xfd9faca15558eb243ac0012cf7acfbf480574668",     # BUSD: MVR, no honeypot, but low transactions 
+                # ]
                 
                 # with mp.Pool(initializer=set_global_session, processes=(mp.cpu_count() * 2)) as pool:
                 with mp.Pool(initializer=set_global_session, processes=1) as pool:
-                    fetchTickReturnList = pool.map(filterHoneypot, [self.getContextObject(tokenAddress) for tokenAddress in toCheckTokenAddresses] )
-                # asyncio.get_event_loop().run_until_complete(asyncio.gather(*(fetchTick(self.getContextObject(pair)) for pair in self.activePairs) ))
+                    fetchFilterReturnList = pool.map(filterPairOnHoneypot, [self.getContextObject(pair) for pair in self.activeMinAgedPairs] )
+                # asyncio.get_event_loop().run_until_complete(asyncio.gather(*(fetchTick(self.getContextObject(pair)) for pair in self.activeMinAgedPairs) ))
                 
                 # pairPriceList = []
                 # for item in fetchTickReturnList:
@@ -385,7 +389,7 @@ class FilterHoneypotV1:
                 #         if "removeFromActivePairs" in item:
                 #             if len(item["removeFromActivePairs"]) > 0:
                 #                 for pair in item["removeFromActivePairs"]:
-                #                     self.activePairs.remove(pair)
+                #                     self.activeMinAgedPairs.remove(pair)
                 #                     self.store.markUnactive(pair)
                                     
                 

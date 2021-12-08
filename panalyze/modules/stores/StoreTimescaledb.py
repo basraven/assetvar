@@ -57,9 +57,29 @@ class StoreTimescaledb:
     with self.connection:
       if idsOnly:
         self.cur.execute("SELECT address, token0Address, token1Address FROM assetvar_data.view_active_pair;")
+        return [Pair(address=item[0], token0=item[1], token1=item[2] ) for item in self.cur.fetchall()] 
       else:
         self.cur.execute("SELECT * FROM assetvar_data.view_active_pair ;")
-      return [Pair(address=item[0], token0=item[1], token1=item[2] ) for item in self.cur.fetchall()] 
+        return [Pair(address=item[0], token0=item[1], token1=item[2] ) for item in self.cur.fetchall()] 
+  
+  def getActivePairsMinAge(self, minAge, idsOnly=True):
+    with self.connection:
+      if idsOnly:
+        self.cur.execute("SELECT address, token0Address, token1Address FROM assetvar_data.view_active_pair where starttime < NOW() - INTERVAL '%s' ;"% minAge)
+        return [Pair(address=item[0], token0=item[1], token1=item[2] ) for item in self.cur.fetchall()] 
+      else:
+        self.cur.execute("SELECT * FROM assetvar_data.view_active_pair ;")
+        return [Pair(address=item[0], token0=item[1], token1=item[2] ) for item in self.cur.fetchall()] 
+  
+  # Not used yet
+  def getActiveTokens(self, idsOnly=True):
+    with self.connection:
+      if idsOnly:
+        self.cur.execute("SELECT tokenAddress FROM assetvar_data.view_active_token;")
+        return [Token(tokenAddress=item[0] ) for item in self.cur.fetchall()] 
+      else:
+        self.cur.execute("SELECT * FROM assetvar_data.view_active_token ;")
+        return [Token(tokenAddress=item[0] ) for item in self.cur.fetchall()] 
     
     
 
