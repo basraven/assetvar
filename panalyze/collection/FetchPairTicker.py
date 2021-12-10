@@ -234,7 +234,7 @@ class FetchPairTicker:
                             if len(item["removeFromActivePairs"]) > 0:
                                 for removeObject in item["removeFromActivePairs"]:
                                     self.activePairs.remove(removeObject["pair"])
-                                    self.store.markUnactive(removeObject["pair"], removeObject["reason"])
+                                    self.store.filterTokenActive(Token.getTargetTokenFromPair(pair=removeObject["pair"]), removeObject["reason"])
                                     
                 
                 self.store.storePairPriceList(pairPriceList)              

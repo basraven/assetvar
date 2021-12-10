@@ -1,5 +1,4 @@
-import asyncio
-import json
+
 import os
 import time
 import warnings
@@ -17,12 +16,6 @@ from panalyze.models.PairPrice import PairPrice
 from panalyze.models.Token import Token
 from panalyze.modules.stores.StoreTimescaledb import StoreTimescaledb as Store
 
-# Source: https://paohuee.medium.com/interact-binance-smart-chain-using-python-4f8d745fe7b7
-# Source: https://gist.github.com/Linch1/ede03999f483f2b1d5fcac9e8b312f2c
-
-# warnings.filterwarnings("ignore", message="divide by zero encountered in divide")
-# warnings.filterwarnings("ignore", message=".*INSUFFICIENT_LIQUIDIT.*")
-
 web3 = Web3(Web3.HTTPProvider("https://bsc-dataseed.binance.org/"))
 # print(web3.isConnected())
 
@@ -36,17 +29,12 @@ pancakeswapFactoryAbi = ""
 pancakeswapRouterAbi = ""
 
 
-# def getCorrectedDecimals(number, decimals ):
-#     number = str(number)
-#     numberAbs = number.split('.')[0]
-    
-#     numberDecimals = ''
-#     if len(number.split(".")) > 1:
-#         numberDecimals = number.split('.')[1]
-#     while( len(numberDecimals) < decimals ):
-#         numberDecimals += "0"
-    
-#     return int(numberAbs + numberDecimals)
+minAge = os.environ.get('MINAGE') if os.environ.get('MINAGE') else '6 hours' # postgress interval value
+maxTax = os.environ.get('MAXTAX') if os.environ.get('MAXTAX') else 50
+maxGas = os.environ.get('MAXGAS') if os.environ.get('MAXGAS') else 1500000
+sleepTime = os.environ.get('SLEEPTIME') if os.environ.get('SLEEPTIME') else 2
+queryLimit = os.environ.get('QUERYLIMIT') if os.environ.get('QUERYLIMIT') else None
+
 
 def set_global_session():
     global session
@@ -59,22 +47,18 @@ def filterPairOnHoneypot(contextObject):
     # targetTokenDecimals = contextObject['targetTokenDecimals']
     # stableCoinPrices = contextObject['stableCoinPrices']
     
-    targetToken = ""
-    targetTokenType = ""
-    if pair.token0 == Token.STABLE_COINS["BNB"]:
-        targetToken = pair.token1
-        targetTokenType = "BNB"
-    elif pair.token1 == Token.STABLE_COINS["BNB"]:
-        targetToken = pair.token0
-        targetTokenType = "BNB"
-    else:
-        # Currently only BNB is supported
+    targetToken = Token.getTargetTokenFromPair(pair=pair)
+    if targetToken == False or (pair.token0 != Token.STABLE_COINS["BNB"] and pair.token1 != Token.STABLE_COINS["BNB"]) :
         return
     
-    targetContract = web3.eth.contract( address=web3.toChecksumAddress(targetToken), abi=STANDARD_ABI )
+    # targetContract = web3.eth.contract( address=web3.toChecksumAddress(targetToken), abi=STANDARD_ABI )
 
-    callData = "0xd66383cb000000000000000000000000" + targetToken[2:]
+    callData = "0xd66383cb000000000000000000000000" + targetToken.tokenAddress[2:]
     val = 100000000000000000 # FIXME: should be something different
+
+    # Using this to reduce pressure on http endpoint, this filter can be slow, that's fine (for now)
+    time.sleep(sleepTime)
+    
 
     # TODO: Use await from create function
     try:
@@ -86,211 +70,52 @@ def filterPairOnHoneypot(contextObject):
             "gas": 45000000,
             "data": callData,
         })
+        
+        
+        decoded = web3.codec.decode_abi(['uint256', 'uint256', 'uint256', 'uint256', 'uint256', 'uint256'], callResponse)
+        buyExpectedOut = decoded[0]
+        buyActualOut = decoded[1]
+        sellExpectedOut = decoded[2]
+        sellActualOut = decoded[3]
+        buyGasUsed = decoded[4]
+        sellGasUsed = decoded[5]
+        buyTax = round((buyExpectedOut - buyActualOut) / buyExpectedOut * 100 * 10) / 10
+        sellTax = round((sellExpectedOut - sellActualOut) / sellExpectedOut * 100 * 10) / 10
+        return {
+            "targetToken" : targetToken,
+            "buyTax" : buyTax,
+            "sellTax" : sellTax,
+            "buyGasUsed" : buyGasUsed,
+            "sellGasUsed" : sellGasUsed
+        }
     except ContractLogicError as err:
         if "TRANSFER_FROM_FAILED" in str(err):
-            print("HONEYPOT FOUND")
-            return
-            
-    
-    decoded = web3.codec.decode_abi(['uint256', 'uint256', 'uint256', 'uint256', 'uint256', 'uint256'], callResponse)
-    buyExpectedOut = decoded[0]
-    buyActualOut = decoded[1]
-    sellExpectedOut = decoded[2]
-    sellActualOut = decoded[3]
-    buyGasUsed = decoded[4]
-    sellGasUsed = decoded[5]
-    buy_tax = round((buyExpectedOut - buyActualOut) / buyExpectedOut * 100 * 10) / 10
-    sell_tax = round((sellExpectedOut - sellActualOut) / sellExpectedOut * 100 * 10) / 10
-    if(buy_tax + sell_tax > 80):
-        print("Extremely high tax. Effectively a honeypot.")
-    elif(buy_tax + sell_tax > 40):
-        print("Really high tax.")
-
-    if(sellGasUsed > 1500000):
-        print("Selling costs a lot of gas.")
-    
-    print("Tax is: " + str(buy_tax + sell_tax))
-    # let blacklisted = {
-    #     '0xa914f69aef900beb60ae57679c5d4bc316a2536a': 'SPAMMING SCAM',
-    #     '0x105e62565a31c269439b29371df4588bf169cef5': 'SCAM',
-    #     '0xbbd1d56b4ccab9302aecc3d9b18c0c1799fe7525': 'Error: TRANSACTION_FROM_FAILED'
-    # };
-    # let unableToCheck = {
-    #     '0x54810d2e8d3a551c8a87390c4c18bb739c5b2063': 'Coin does not utilise PancakeSwap',
-    #     '0x7e946ee89a58691f0d21320ec8f684e29b890037': 'Honeypot cant check this token right now',
-    #     '0xaA7836830a58bC9A90Ed0b412B31c2B84F1eaCBE': 'Honeypot cant check this token right now due to anti-bot measures',
-    #     '0xc0834ee3f6589934dc92c63a893b4c4c0081de06': 'Due to anti-bot, Honeypot is not able to check at the moment.'
-    # };
-
-    # if(blacklisted[address.toLowerCase()] !== undefined) {
-    #     let reason = blacklisted[address.toLowerCase()];
-    #     document.getElementById('shitcoin').innerHTML = '<div style="max-width: 100%;" class="ui compact error message"><div class="header">Yup, honeypot. Run the fuck away.</div><p>Address: ' + addressToOutput + '</p><p id="token-info">'+tokenName + ' ('+tokenSymbol+')'+'</p><br>' + reason + '</div>';
-    #     return;
-    # }
-    # if(unableToCheck[address.toLowerCase()] !== undefined) {
-    #     let rreason = unableToCheck[address.toLowerCase()];
-    #     document.getElementById('shitcoin').innerHTML = '<div style="max-width: 100%;" class="ui compact info message"><div class="header">Unable to check</div><p>The honeypot checker was unable to determine the result for the specified address.<br>'+rreason+'<br>Contact @ishoneypot on telegram for more.</p><p>Address: ' + addressToOutput + '</p><p id="token-info">'+tokenName + ' ('+tokenSymbol+')'+'</p><br>' + '' + '</div>';
-    #     return;
-    # }
-
-    # let val = 100000000000000000;
-    # if(bnbIN < val) {
-    #     val = bnbIN - 1000;
-    # }
-    # web3.eth.call({
-    #     to: '0x2bf75fd2fab5fc635a4c6073864c708dfc8396fc',
-    #     from: '0x8894e0a0c962cb723c1976a4421c95949be2d4e3',
-    #     value: val,
-    #     gas: 45000000,
-    #     data: callData,
-    # })
-    # .then((val) => {
-    #     let warnings = [];
-    #     let decoded = web3.eth.abi.decodeParameters(['uint256', 'uint256', 'uint256', 'uint256', 'uint256', 'uint256'], val);
-    #     let buyExpectedOut = web3.utils.toBN(decoded[0]);
-    #     let buyActualOut = web3.utils.toBN(decoded[1]);
-    #     let sellExpectedOut = web3.utils.toBN(decoded[2]);
-    #     let sellActualOut = web3.utils.toBN(decoded[3]);
-    #     let buyGasUsed = web3.utils.toBN(decoded[4]);
-    #     let sellGasUsed = web3.utils.toBN(decoded[5]);
-    #     buy_tax = Math.round((buyExpectedOut - buyActualOut) / buyExpectedOut * 100 * 10) / 10;
-    #     sell_tax = Math.round((sellExpectedOut - sellActualOut) / sellExpectedOut * 100 * 10) / 10;
-    #     if(buy_tax + sell_tax > 80) {
-    #         warnings.push("Extremely high tax. Effectively a honeypot.")
-    #     }else if(buy_tax + sell_tax > 40) {
-    #         warnings.push("Really high tax.");
-    #     }
-    #     if(sellGasUsed > 1500000) {
-    #         warnings.push("Selling costs a lot of gas.");
-    #     }
-    #     console.log(buy_tax, sell_tax);
-    #     let maxdiv = '';
-    #     if(maxTXAmount != 0 || maxSell != 0) {
-    #         let n = 'Max TX';
-    #         let x = maxTXAmount;
-    #         if(maxSell != 0) {
-    #             n = 'Max Sell';
-    #             x = maxSell;
-    #         }
-    #         let bnbWorth = '?'
-    #         if(maxTxBNB != null) {
-    #             bnbWorth = Math.round(maxTxBNB / 10**15) / 10**3;
-    #         }
-    #         let tokens = Math.round(x / 10**tokenDecimals);
-    #         maxdiv = '<p>'+n+': ' + tokens + ' ' + tokenSymbol + ' (~'+bnbWorth+' BNB)</p>';
-    #     }
-    #     let warningmsg = '';
-    #     let warningMsgExtra = '';
-    #     let uiType = 'success';
-    #     let warningsEncountered = false;
-    #     if(warnings.length > 0) {
-    #         warningsEncountered = true;
-    #         uiType = 'warning';
-    #         warningmsg = '<p><ul>WARNINGS';
-    #         for(let i = 0; i < warnings.length; i++) {
-    #             warningmsg += '<li>'+warnings[i]+'</li>';
-    #         }
-    #         warningmsg += '</ul></p>';
-    #     }
-
-    #     let gasdiv = '<p>Gas used for Buying: ' + numberWithCommas(buyGasUsed) + '<br>Gas used for Selling: ' + numberWithCommas(sellGasUsed) + '</p>';
-    #     document.getElementById('shitcoin').innerHTML = '<div style="max-width: 100%;" class="ui compact '+uiType+' message"><div class="header">Does not seem like a honeypot.</div><p>This can always change! Do your own due diligence.</p>'+warningmsg+'<p>Address: ' + addressToOutput + '</p><p id="token-info">'+tokenName + ' ('+tokenSymbol+')'+'</p>'+maxdiv+gasdiv+'<p>Buy Tax: ' + buy_tax + '%<br>Sell Tax: ' + sell_tax + '%</p></div>';
-    # })
-    # .catch(err => {
-    #     if(err == 'Error: Returned error: execution reverted') {
-    #         document.getElementById('shitcoin').innerHTML = '<div style="max-width: 100%;" class="ui compact info message"><div class="header">Unable to check</div><p>The honeypot checker was unable to determine the result for the specified address.<br>Possible reasons for this:<ul><li>Invalid address</li><li>Token exists on a different chain</li><li>No liquidity paired wit…
-    
-    
-    
-    
-    
-    
-    
-#     lastPrice = contextObject['lastPrice']
-#     activePairs = contextObject['activePairs']
-    
-#     removeFromActivePairs = []
-
-#     # dt = "0x1749b7ff7eDD02a51f9D7075eC5875a106CF05B5"
-#     try:
-#         # if pair.address == dt:
-#         #     t1 = time.procefss_time()
-            
-#         if pair.token0 in Token.STABLE_COINS.values():
-#             targetToken = pair.token1
-#             stableCoin = pair.token0
-#         elif pair.token1 in Token.STABLE_COINS.values():
-#             targetToken = pair.token0
-#             stableCoin = pair.token1
-#         else:
-#             # print("Not found a stable coin\n \t pair %s \n \t token0 %s \n \t token1 %s" % (pair.address, pair.token0, pair.token1))
-#             activePairs.remove(pair)
-#             removeFromActivePairs.append[pair]
-#             # self.store.markUnactive(pair)
-#             return
-        
-#         # print(pair.address)
-#         # return random.randint(0,100)
-#         # if pair.address == dt:
-#         #     tn1 = time.process_time()
-#         #     print("tn1: %s seconds"%(tn1 - t1))
-        
-#         # TODO: Write to db instead of get at runtime
-#         if targetToken not in targetTokenDecimals:
-#             # print("Added decimals details to runtime cache for: " + targetToken)
-#             tokenRouter = web3.eth.contract( address=web3.toChecksumAddress(targetToken), abi=STANDARD_ABI )
-#             targetTokenDecimals[targetToken] = tokenRouter.functions.decimals().call()
-            
-#         # Amount of tokens we want the price for is always 1
-#         tokensToSell = getCorrectedDecimals(1, targetTokenDecimals[targetToken])
-
-#         router = web3.eth.contract( abi=pancakeswapRouterAbi, address=web3.toChecksumAddress(PANCAKESWAP_ROUTER_ADDRESS) )
-        
-#         # Using token0 and token1 here because the order is important
-#         amountOut = router.functions.getAmountsOut(int(tokensToSell), [web3.toChecksumAddress(pair.token0) , web3.toChecksumAddress(pair.token1)]).call()
-#         amountOut =  web3.fromWei(number=amountOut[1], unit='ether')
-        
-#         if pair.address not in lastPrice:
-#             lastPrice[pair.address] = amountOut
-#         elif lastPrice[pair.address] == amountOut:
-#             # Lets only update the db is there is something to update it for
-#             return
-        
-#         priceStableCoin = 0
-#         if stableCoin == Token.STABLE_COINS["USDT"]:
-#             priceUsdt = amountOut
-#         if stableCoin in Token.STABLE_COINS.values():
-#             stableCoinName = [k for k, v in Token.STABLE_COINS.items() if v == stableCoin][0]
-#             priceStableCoin = amountOut
-#             priceUsdt = (priceStableCoin * stableCoinPrices[stableCoinName])
-            
-                        
-#         # print("BNB Price: " + str(priceStableCoin) + " in USDT: " + str(priceUsdt) )
-        
-#         return {
-#                 "lastPrice" : lastPrice,
-#                 "removeFromActivePairs" : removeFromActivePairs,
-#                 "pairPrice" : PairPrice(currentTime=currentTime, pairAddress=pair.address, priceStableCoin=priceStableCoin, priceUsdt=priceUsdt, targetToken=targetToken, stableCoin=stableCoin)  
-#             }
-        
-         
-        
-#     except Exception as err:
-#         if "PancakeLibrary: INSUFFICIENT_LIQUIDITY" in str(err):
-#             pass
-#         else:
-#             timeString = datetime.now().strftime("%H:%M:%S") 
-#             print(f"{timeString}: Exception occured: {err}")
-#         # pass
-
+            # print("HONEYPOT FOUND")
+            return {
+                "targetToken" : targetToken,
+                "exception" : "TRANSFER_FROM_FAILED"
+            }
+        if "INSUFFICIENT_LIQUIDITY" in str(err):
+            return {
+                "targetToken" : targetToken,
+                "exception" : "INSUFFICIENT_LIQUIDITY"
+            }
+        if "TRANSFER_FAILED" in str(err):
+            return {
+                "targetToken" : targetToken,
+                "exception" : "TRANSFER_FAILED"
+            }
+        if "execution reverted" in str(err):
+            return {
+                "targetToken" : targetToken,
+                "exception" : "execution reverted"
+            }
+        else: 
+            print(str(err))        
 
 class FilterHoneypotV1:
 
-    apiKey = ""
-    # stableCoinPrices = dict()
-    # targetTokenDecimals = dict()
-    # lastPrice = dict()    
-    
+    apiKey = ""   
     BSCSCAN_API = "https://api.bscscan.com/api"
     
     activeMinAgedPairs = {}
@@ -316,27 +141,9 @@ class FilterHoneypotV1:
         if response['status'] != '0':
             return response["result"]
             
-
-    # def updateStableCoinsToUSDTPrice(self):
-    #     for stableCoinName in Token.STABLE_COINS:
-    #         try:
-    #             if stableCoinName == "USDT":
-    #                 self.stableCoinPrices[stableCoinName] = 1
-    #                 continue
-    #             stableCoinToSell = web3.toWei("1", "ether")        
-    #             router = web3.eth.contract( abi=pancakeswapRouterAbi, address=web3.toChecksumAddress(PANCAKESWAP_ROUTER_ADDRESS) )
-    #             amountOut = router.functions.getAmountsOut(stableCoinToSell, [web3.toChecksumAddress(Token.STABLE_COINS[stableCoinName]) , web3.toChecksumAddress(Token.STABLE_COINS["USDT"])]).call()
-    #             self.stableCoinPrices[stableCoinName] =  web3.fromWei(number=amountOut[1], unit='ether')
-    #             print("\t%s price: %s" % (stableCoinName, str(self.stableCoinPrices[stableCoinName]) ))
-    #         except Exception as err:
-    #             timeString = datetime.now().strftime("%H:%M:%S") 
-    #             print(f"{timeString}: Exception occured while updating {stableCoinName} price: {err}")
-    #             pass
-        
-
     def getActiveMinAgedPairList(self, minAge):        
         try:
-            self.activeMinAgedPairs = self.store.getActivePairsMinAge(minAge, idsOnly=True)
+            self.activeMinAgedPairs = self.store.getActivePairsMinAge(minAge, idsOnly=True, limit=queryLimit)
         except Exception as err:
             timeString = datetime.now().strftime("%H:%M:%S") 
             print(f"{timeString}: Exception occured while getting active tokens: {err}")
@@ -346,20 +153,39 @@ class FilterHoneypotV1:
         return {
             "pair": pair,
             "currentTime" : self.currentTime,
-            # "targetTokenDecimals": self.targetTokenDecimals,
-            # "stableCoinPrices" : self.stableCoinPrices,
-            # "activePairs" : self.activeMinAgedPairs,
-            # "lastPrice" : self.lastPrice
         }
     
-    def filterForHoneyPots(self):    
-
+    def handleTokenDetail(self, tokenDetail):
+        if "exception" in tokenDetail:
+            if tokenDetail["exception"] == "INSUFFICIENT_LIQUIDITY":
+                self.store.filterTokenHoneypotv1(token=tokenDetail["targetToken"], reason=502)
+            if tokenDetail["exception"] == "TRANSFER_FROM_FAILED":
+                self.store.filterTokenHoneypotv1(token=tokenDetail["targetToken"], reason=503)
+            if tokenDetail["exception"] == "TRANSFER_FAILED":
+                self.store.filterTokenHoneypotv1(token=tokenDetail["targetToken"], reason=102, toFilter=False)
+            if tokenDetail["exception"] == "execution reverted":
+                self.store.filterTokenHoneypotv1(token=tokenDetail["targetToken"], reason=104, toFilter=False)
+        else:
+            # Check if new filters are needed
+            if(tokenDetail["buyTax"] + tokenDetail["sellTax"] > maxTax ):
+                self.store.filterTokenHoneypotv1(token=tokenDetail["targetToken"], reason=504)
+            if(tokenDetail["sellGasUsed"] > maxGas ):
+                self.store.filterTokenHoneypotv1(token=tokenDetail["targetToken"], reason=505)
+            if(tokenDetail["buyTax"] + tokenDetail["sellTax"] == 0.0 ):
+                self.store.filterTokenHoneypotv1(token=tokenDetail["targetToken"], reason=103, reasonDetails="Tax is 0.0", toFilter=False)
+        
+            # Store generic outcome
+            self.store.updateTokenTax(token=tokenDetail["targetToken"], buyTax=tokenDetail["buyTax"], selTax=tokenDetail["sellTax"])
+            self.store.updateTokenGasSellUsed(token=tokenDetail["targetToken"], buyGasUsed=tokenDetail["buyGasUsed"], sellGasUsed=tokenDetail["sellGasUsed"])
+                
+    
+    def filterForHoneyPots(self):
+        
         while True:
             try:            
                 self.currentTime = datetime.now()
                 print("Filtering on Honeypot V1: %s"%self.currentTime)
                 start_time = time.time()
-                minAge = '6 hours' # postgress interval value
                 self.getActiveMinAgedPairList(minAge)
                 
                 
@@ -373,27 +199,16 @@ class FilterHoneypotV1:
                 # ]
                 
                 # with mp.Pool(initializer=set_global_session, processes=(mp.cpu_count() * 2)) as pool:
-                with mp.Pool(initializer=set_global_session, processes=1) as pool:
-                    fetchFilterReturnList = pool.map(filterPairOnHoneypot, [self.getContextObject(pair) for pair in self.activeMinAgedPairs] )
-                # asyncio.get_event_loop().run_until_complete(asyncio.gather(*(fetchTick(self.getContextObject(pair)) for pair in self.activeMinAgedPairs) ))
+                # with mp.Pool(initializer=set_global_session, processes=1) as pool:
+                #     tokenDetails = pool.map(filterPairOnHoneypot, [self.getContextObject(pair) for pair in self.activeMinAgedPairs][10] )
                 
-                # pairPriceList = []
-                # for item in fetchTickReturnList:
-                #     if item:
-                #         if "pairPrice" in item:
-                #             pairPriceList.append(item["pairPrice"])
-                #         if "lastPrice" in item:
-                #             for lastPriceUpdateKey in item["lastPrice"]:
-                #                 if item["lastPrice"][lastPriceUpdateKey]:
-                #                     self.lastPrice[lastPriceUpdateKey] = item["lastPrice"][lastPriceUpdateKey]
-                #         if "removeFromActivePairs" in item:
-                #             if len(item["removeFromActivePairs"]) > 0:
-                #                 for pair in item["removeFromActivePairs"]:
-                #                     self.activeMinAgedPairs.remove(pair)
-                #                     self.store.markUnactive(pair)
-                                    
-                
-                # self.store.storePairPriceList(pairPriceList)              
+                # TODO: one by one works for now...
+                for pair in self.activeMinAgedPairs:
+                    tokenDetail = filterPairOnHoneypot(self.getContextObject(pair))
+                    if tokenDetail != None:
+                        self.handleTokenDetail(tokenDetail)
+                        
+                        
                 
                 elapsed_time =  (time.time() - start_time)
                 print("Fetching ticks took: %s seconds"%elapsed_time)
@@ -404,8 +219,8 @@ class FilterHoneypotV1:
             except Exception as err:
                 timeString = datetime.now().strftime("%H:%M:%S") 
                 print(f"{timeString}: Exception occured: {err}")
-            finally:
-                pool.close()
+            # finally:
+            #     pool.close()
                 
             
 
@@ -415,7 +230,6 @@ def main():
     filterHoneypotV1.filterForHoneyPots()
 
 if __name__ == "__main__":
-    import time
     s = time.perf_counter()
     main()   
     elapsed = time.perf_counter() - s

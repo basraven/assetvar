@@ -34,3 +34,19 @@ class Token:
         self.transactionHash = transactionHash
         self.totalSupply = totalSupply
         self.lastUpdated = lastUpdated
+    
+    def getTargetTokenFromPair(pair):
+        if pair.token0 in Token.STABLE_COINS.values() and pair.token1 not in Token.STABLE_COINS.values():
+            return Token(tokenAddress=pair.token1)
+        if pair.token1 in Token.STABLE_COINS.values() and pair.token0 not in Token.STABLE_COINS.values():
+            return Token(tokenAddress=pair.token0)
+        return False
+        
+        
+    def getStableTokenNameFromPair(pair):
+        key0 = [key for key, val in Token.STABLE_COINS.items() if val == pair.token0]
+        if key0:
+            return key0[0]
+        key1 = [key for key, val in Token.STABLE_COINS.items() if val == pair.token1]
+        if key1:
+            return key1[0]

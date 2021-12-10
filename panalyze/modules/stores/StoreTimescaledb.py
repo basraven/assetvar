@@ -18,6 +18,9 @@ class StoreTimescaledb:
     self.cur = self.connection.cursor()
     return self.connection
 
+# --------------------
+# EXISTS
+
   def checkPairExists(self, address):
     with self.connection:
       # self.cur.execute("SELECT address FROM assetvar_data.pair;")
@@ -42,16 +45,8 @@ class StoreTimescaledb:
       return self.cur.fetchone()[0] 
     
     
-  # def getMostPopularToken(self, address):
-  #   with self.connection:
-  #     exists_query = '''
-  #       select exists (
-  #           SELECT 1
-  #           FROM assetvar_data.token
-  #           WHERE tokenAddress = %s
-  #       )'''
-  #     self.cur.execute (exists_query, (address,))
-  #     return self.cur.fetchone()[0] 
+  # --------------------
+  # GET ACTIVE
     
   def getActivePairs(self, idsOnly=True):
     with self.connection:
@@ -62,13 +57,21 @@ class StoreTimescaledb:
         self.cur.execute("SELECT * FROM assetvar_data.view_active_pair ;")
         return [Pair(address=item[0], token0=item[1], token1=item[2] ) for item in self.cur.fetchall()] 
   
-  def getActivePairsMinAge(self, minAge, idsOnly=True):
+  def getActivePairsMinAge(self, minAge, idsOnly=True, limit=None):
     with self.connection:
       if idsOnly:
-        self.cur.execute("SELECT address, token0Address, token1Address FROM assetvar_data.view_active_pair where starttime < NOW() - INTERVAL '%s' ;"% minAge)
+        queryString = "SELECT address, token0Address, token1Address FROM assetvar_data.view_active_pair where starttime < NOW() - INTERVAL '%s' "% minAge
+        if limit:
+          queryString += " limit %s"%limit
+        queryString += ";"
+        self.cur.execute(queryString)
         return [Pair(address=item[0], token0=item[1], token1=item[2] ) for item in self.cur.fetchall()] 
       else:
-        self.cur.execute("SELECT * FROM assetvar_data.view_active_pair ;")
+        queryString = "SELECT * FROM assetvar_data.view_active_pair "
+        if limit:
+          queryString += " limit %s"%limit
+        queryString += ";"
+        self.cur.execute(queryString)
         return [Pair(address=item[0], token0=item[1], token1=item[2] ) for item in self.cur.fetchall()] 
   
   # Not used yet
@@ -81,7 +84,9 @@ class StoreTimescaledb:
         self.cur.execute("SELECT * FROM assetvar_data.view_active_token ;")
         return [Token(tokenAddress=item[0] ) for item in self.cur.fetchall()] 
     
-    
+
+  # --------------------
+  # STORE ABSTRACTS    
 
   def storeToken(self, token):
     if not self.checkTokenExists(token.tokenAddress):
@@ -126,6 +131,9 @@ class StoreTimescaledb:
     else: # do some update?
       pass
   
+  # --------------------
+  # PAIR PRICE
+  
   def storePairPriceList(self, PairPriceList):
     with self.connection:
       insert_query = 'INSERT INTO assetvar_data.pair_price(currentTime, pairAddress, priceStableCoin, priceUsdt, targetToken, stableCoin) VALUES %s'
@@ -139,19 +147,22 @@ class StoreTimescaledb:
     with self.connection:
       self.cur.execute("SELECT currentTime, pairAddress, priceStableCoin, priceUsdt, targetToken, stableCoin FROM assetvar_data.pair_price WHERE pairAddress = %s;", (pair.address,))
       return [PairPrice(currentTime=item[0], pairAddress=item[1], priceStableCoin=item[2], priceUsdt=item[3], targetToken=item[4], stableCoin=item[5] ) for item in self.cur.fetchall()] 
-          
-  def markUnactive(self, pair, reason):
-    with self.connection:
-      self.cur.execute("INSERT INTO assetvar_data.filter_token_active(tokenAddress, toFilter, failedAttempts, reason) VALUES (%s, %s, %s, %s) ON CONFLICT DO UPDATE SET failedAttempts = failedAttempts + 1;",
-          (
-            pair.address,
-            True,
-            1,
-            reason,
-          )
-        )
-    self.connection.commit()
+  
+  # --------------------
+  # GET BY
     
+  def getPairByAddress(self, address):
+    with self.connection:
+      query = '''
+            SELECT token0Address, token1Address, address, startTime, endTime, atBlockNr, atBlockHash, transactionIndex, transactionHash
+            FROM assetvar_data.pair
+            WHERE address = %s;
+      '''
+      self.cur.execute (query, (address,))
+      returnData = self.cur.fetchone()
+      if returnData:
+        return Pair(token0=returnData[0], token1=returnData[1], address=returnData[2], startTime=returnData[3], endTime=returnData[4], atBlockNr=returnData[5], atBlockHash=returnData[6], transactionIndex=returnData[7], transactionHash=returnData[8])
+  
   def getTokenByAddress(self, address):
     with self.connection:
       query = '''
@@ -164,15 +175,60 @@ class StoreTimescaledb:
       if returnData:
         return Token(tokenAddress=returnData[0], name=returnData[1], symbol=returnData[2], decimals=returnData[3], startTime=returnData[4], endTime=returnData[5], atBlockNr=returnData[6], atBlockHash=returnData[7], transactionIndex=returnData[8], transactionHash=returnData[9], totalSupply=returnData[10], lastUpdated=returnData[11])
   
-  
-  def getPairByAddress(self, address):
+   
+          
+  # --------------------
+  # FILTERS
+    
+  def filterTokenActive(self, token, reason, toFilter=True):
     with self.connection:
-      query = '''
-            SELECT token0Address, token1Address, address, startTime, endTime, atBlockNr, atBlockHash, transactionIndex, transactionHash
-            FROM assetvar_data.pair
-            WHERE address = %s;
-      '''
-      self.cur.execute (query, (address,))
-      returnData = self.cur.fetchone()
-      if returnData:
-        return Pair(token0=returnData[0], token1=returnData[1], address=returnData[2], startTime=returnData[3], endTime=returnData[4], atBlockNr=returnData[5], atBlockHash=returnData[6], transactionIndex=returnData[7], transactionHash=returnData[8])
+      self.cur.execute("INSERT INTO assetvar_data.filter_token_active(tokenAddress, toFilter, failedAttempts, reason) VALUES (%s, %s, %s, %s) ON CONFLICT (tokenAddress) DO UPDATE SET failedAttempts = EXCLUDED.failedAttempts + 1",
+          (
+            token.tokenAddress,
+            toFilter,
+            1,
+            reason
+          )
+        )
+    self.connection.commit()
+  
+  def filterTokenHoneypotv1(self, token, reason, toFilter=True, reasonDetails=None):
+    with self.connection:
+      self.cur.execute("INSERT INTO assetvar_data.filter_token_honeypot_v1(tokenAddress, toFilter, failedAttempts, reason, reasonDetails) VALUES (%s, %s, %s, %s, %s) ON CONFLICT (tokenAddress) DO UPDATE SET failedAttempts = EXCLUDED.failedAttempts + 1;",
+          (
+            token.tokenAddress,
+            toFilter,
+            1,
+            reason,
+            reasonDetails
+          )
+        )
+    self.connection.commit()
+      
+    
+  # --------------------
+  # META DATA UPDATES
+  
+  def updateTokenTax(self, token, buyTax, selTax):
+    with self.connection:
+      self.cur.execute("INSERT INTO assetvar_data.token_tax(tokenAddress, buyTax, sellTax) VALUES (%s, %s, %s) ON CONFLICT (tokenAddress) DO NOTHING;",
+          (
+            token.tokenAddress,
+            buyTax,
+            selTax
+          )
+        )
+    self.connection.commit()
+  
+  def updateTokenGasSellUsed(self, token, buyGasUsed, sellGasUsed):
+    with self.connection:
+      self.cur.execute("INSERT INTO assetvar_data.token_gas_used(tokenAddress, buyGasUsed, sellGasUsed) VALUES (%s, %s, %s) ON CONFLICT (tokenAddress) DO NOTHING;",
+          (
+            token.tokenAddress,
+            buyGasUsed, 
+            sellGasUsed
+          )
+        )
+    self.connection.commit()
+    
+

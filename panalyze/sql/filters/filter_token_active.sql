@@ -9,5 +9,5 @@ CREATE TABLE assetvar_data.filter_token_active (
 );
 -- reason:
 --    0: No, just use
---    1: Yes, no specific reasonw
+--    1: Yes, no specific reason
 --    2: Not a known stable coin
