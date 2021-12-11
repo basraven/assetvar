@@ -9,10 +9,12 @@ spec:
   replicas: 1
   selector:
     matchLabels:
+      app: pgadmin
       k8s-app: pgadmin
   template:
     metadata:
       labels:
+        app: pgadmin
         k8s-app: pgadmin
     spec:
       # Essential

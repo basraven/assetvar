@@ -4,8 +4,9 @@ from psycopg2 import extras
 from panalyze.models.Pair import Pair
 from panalyze.models.PairPrice import PairPrice
 from panalyze.models.Token import Token
+import os
 
-DEFAULT_CONNECTION_STRING = "postgres://postgres:password@localhost:5432"
+DEFAULT_CONNECTION_STRING = "postgres://postgres:" + os.environ.get('POSTGRES_PASSWORD').strip() + "@" + os.environ.get('TIMESCALE_ENDPOINT').strip() + ":5432"
 class StoreTimescaledb:
 
   def __init__(self):

@@ -211,7 +211,7 @@ class FetchPairTicker:
 
         while True:
             try:            
-                self.currentTime = datetime.now().strftime("%H:%M:%S") 
+                self.currentTime = datetime.now() 
                 print("Fetching pairs ticks: %s"%self.currentTime)
                 self.getActivePairList()
                 self.updateStableCoinsToUSDTPrice()

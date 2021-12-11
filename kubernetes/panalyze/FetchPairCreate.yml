@@ -10,7 +10,8 @@ data:
     git clone https://github.com/basraven/assetvar.git assetvar
     cd assetvar/panalyze
     pip3 install -r requirements.txt 2>/dev/null
-    python3 FetchPairCreate.py
+    cd ..
+    python3 -m panalyze.collection.FetchPairCreate
 
 ---
 apiVersion: apps/v1
@@ -57,6 +58,13 @@ spec:
             secretKeyRef:
               name: bscscan-ro
               key: BSCSCAN_API_KEY
+        - name: POSTGRES_PASSWORD 
+          valueFrom:
+            secretKeyRef:
+              name: pgadmin
+              key: POSTGRES_PASSWORD
+        - name: TIMESCALE_ENDPOINT
+          value: "timescaledb"
         volumeMounts:
         - name: fetchpaircreate-config
           mountPath: /tmp/run.sh

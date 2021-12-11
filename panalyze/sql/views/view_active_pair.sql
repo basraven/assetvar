@@ -1,11 +1,11 @@
-DROP VIEW IF EXISTS view_active_pair;
-CREATE VIEW view_active_pair as
+DROP VIEW IF EXISTS assetvar_data.view_active_pair;
+CREATE VIEW assetvar_data.view_active_pair as
 
 SELECT *
-FROM pair 
+FROM assetvar_data.pair 
 WHERE NOT EXISTS (
    SELECT toFilter 
-   FROM   filter_token_honeypot_v1
+   FROM   assetvar_data.filter_token_honeypot_v1
    WHERE  (
             filter_token_honeypot_v1.tokenAddress 			= pair.token0address
         OR  filter_token_honeypot_v1.tokenAddress 			= pair.token1address
@@ -13,7 +13,7 @@ WHERE NOT EXISTS (
 )
 AND	  NOT EXISTS (
    SELECT toFilter 
-   FROM   filter_token_active
+   FROM   assetvar_data.filter_token_active
    WHERE  (
             filter_token_active.tokenAddress 	            = pair.token0address
         OR  filter_token_active.tokenAddress 	            = pair.token1address

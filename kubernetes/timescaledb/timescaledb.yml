@@ -37,30 +37,34 @@ spec:
         - mountPath: /var/lib/postgresql/data
           name: timescaledb
         env:
-        - name: POSTGRES_PASSWORD
-          value: "password"
+        - name: POSTGRES_PASSWORD 
+          valueFrom:
+            secretKeyRef:
+              name: pgadmin
+              key: POSTGRES_PASSWORD
+
       volumes:
       - name: timescaledb
         persistentVolumeClaim:
           claimName: timescaledb-claim
-# ---
-# apiVersion: v1
-# kind: Service
-# metadata:
-#   name: timescaledb
-#   namespace: assetvar
-# spec:
-#   ports:
-#   - port: 5432
-#     targetPort: 5432
-#   selector:
-#     k8s-app: timescaledb
-
 ---
 apiVersion: v1
 kind: Service
 metadata:
   name: timescaledb
+  namespace: assetvar
+spec:
+  ports:
+  - port: 5432
+    targetPort: 5432
+  selector:
+    k8s-app: timescaledb
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: timescaledb-ext
   namespace: assetvar
 spec:
   ports:
