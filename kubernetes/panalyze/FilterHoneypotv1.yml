@@ -1,0 +1,149 @@
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: filterhoneypotv1-config
+  namespace: assetvar
+data:
+  run.sh: |-
+    #!/bin/bash
+    git clone https://github.com/basraven/assetvar.git assetvar
+    cd assetvar/panalyze
+    pip3 install -r requirements.txt 2>/dev/null
+    cd ..
+    python3 -m panalyze.filtering.FilterHoneypotV1
+
+
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: filterhoneypotv1
+  namespace: assetvar
+  labels:
+    app: filterhoneypotv1
+spec:
+  schedule: "5 */6 * * *"
+  concurrencyPolicy: Replace
+  successfulJobsHistoryLimit: 2
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      template:
+        metadata:
+          labels:
+            k8s-app: filterhoneypotv1
+        spec:
+          restartPolicy: Never    
+          dnsConfig:
+            # Not sure if this is really needed...
+            nameservers:
+              - 8.8.8.8
+
+          # Essential
+          affinity:
+            nodeAffinity:
+              requiredDuringSchedulingIgnoredDuringExecution:
+                nodeSelectorTerms:
+                - matchExpressions:
+                  - key: la1r.workload/essential
+                    operator: In
+                    values:
+                    - "true"
+          priorityClassName: essential
+
+          containers:
+          - name: filterhoneypotv1
+            resources:
+            image: python:3.8
+            command: ["/tmp/run.sh"]
+            env:
+            - name: APITOKEN 
+              valueFrom:
+                secretKeyRef:
+                  name: bscscan-ro
+                  key: BSCSCAN_API_KEY
+            - name: POSTGRES_PASSWORD 
+              valueFrom:
+                secretKeyRef:
+                  name: pgadmin
+                  key: POSTGRES_PASSWORD
+            - name: TIMESCALE_ENDPOINT
+              value: "timescaledb"
+            volumeMounts:
+            - name: filterhoneypotv1-config
+              mountPath: /tmp/run.sh
+              subPath: run.sh
+          volumes:
+          - name: filterhoneypotv1-config
+            configMap:
+              name: filterhoneypotv1-config
+              items:
+              - key: run.sh
+                path: run.sh
+              defaultMode: 0744
+
+# ---
+# apiVersion: apps/v1
+# kind: Deployment
+# metadata:
+#   name: filterhoneypotv1
+#   namespace: assetvar
+# spec:
+
+#   replicas: 1
+#   selector:
+#     matchLabels:
+#       k8s-app: filterhoneypotv1
+#   template:
+#     metadata:
+#       labels:
+#         k8s-app: filterhoneypotv1
+#     spec:
+#       dnsConfig:
+#         # Not sure if this is really needed...
+#         nameservers:
+#           - 8.8.8.8
+
+#       # Essential
+#       affinity:
+#         nodeAffinity:
+#           requiredDuringSchedulingIgnoredDuringExecution:
+#             nodeSelectorTerms:
+#             - matchExpressions:
+#               - key: la1r.workload/essential
+#                 operator: In
+#                 values:
+#                 - "true"
+#       priorityClassName: essential
+
+#       containers:
+#       - name: filterhoneypotv1
+#         resources:
+#         image: python:3.8
+#         command: ["/tmp/run.sh"]
+#         env:
+#         - name: APITOKEN 
+#           valueFrom:
+#             secretKeyRef:
+#               name: bscscan-ro
+#               key: BSCSCAN_API_KEY
+#         - name: POSTGRES_PASSWORD 
+#           valueFrom:
+#             secretKeyRef:
+#               name: pgadmin
+#               key: POSTGRES_PASSWORD
+#         - name: TIMESCALE_ENDPOINT
+#           value: "timescaledb"
+#         volumeMounts:
+#         - name: filterhoneypotv1-config
+#           mountPath: /tmp/run.sh
+#           subPath: run.sh
+#       volumes:
+#       - name: filterhoneypotv1-config
+#         configMap:
+#           name: filterhoneypotv1-config
+#           items:
+#           - key: run.sh
+#             path: run.sh
+#           defaultMode: 0744

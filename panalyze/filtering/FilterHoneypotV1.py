@@ -181,7 +181,7 @@ class FilterHoneypotV1:
     
     def filterForHoneyPots(self):
         
-        while True:
+        # while True:
             try:            
                 self.currentTime = datetime.now()
                 print("Filtering on Honeypot V1: %s"%self.currentTime)
@@ -213,9 +213,9 @@ class FilterHoneypotV1:
                 elapsed_time =  (time.time() - start_time)
                 print("Fetching ticks took: %s seconds"%elapsed_time)
                 print("\n---")
-                if elapsed_time < 5:
-                    print("Sleeping...")
-                    time.sleep(10)
+                # if elapsed_time < 5:
+                #     print("Sleeping...")
+                    # time.sleep(3600)
             except Exception as err:
                 timeString = datetime.now().strftime("%H:%M:%S") 
                 print(f"{timeString}: Exception occured: {err}")
